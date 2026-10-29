@@ -13,6 +13,7 @@ import torch
 
 import openpi.models.model as _model
 import openpi.training.config as _config
+import openpi.training.robosyn_mixture as robosyn_mixture
 from openpi.training.droid_rlds_dataset import DroidRldsDataset
 import openpi.transforms as _transforms
 
@@ -299,7 +300,11 @@ def create_torch_data_loader(
             execute in the main process.
         seed: The seed to use for shuffling the data.
     """
-    dataset = create_torch_dataset(data_config, action_horizon, model_config)
+    mixture_weights = None
+    if data_config.mixture is not None:
+        dataset, mixture_weights = robosyn_mixture.build_mixture(data_config.mixture, action_horizon)
+    else:
+        dataset = create_torch_dataset(data_config, action_horizon, model_config)
     dataset = transform_dataset(dataset, data_config, skip_norm_stats=skip_norm_stats)
 
     # Use TorchDataLoader for both frameworks
@@ -320,6 +325,13 @@ def create_torch_data_loader(
             local_batch_size = batch_size
     else:
         local_batch_size = batch_size // jax.process_count()
+        if mixture_weights is not None:
+            sampler = torch.utils.data.WeightedRandomSampler(
+                mixture_weights,
+                num_samples=len(mixture_weights),
+                replacement=True,
+                generator=torch.Generator().manual_seed(seed),
+            )
 
     logging.info(f"local_batch_size: {local_batch_size}")
     data_loader = TorchDataLoader(

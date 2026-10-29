@@ -26,6 +26,7 @@ import openpi.training.droid_rlds_dataset as droid_rlds_dataset
 import openpi.training.misc.polaris_config as polaris_config
 import openpi.training.misc.roboarena_config as roboarena_config
 import openpi.training.optimizer as _optimizer
+import openpi.training.robosyn_mixture as robosyn_mixture
 import openpi.training.weight_loaders as weight_loaders
 import openpi.transforms as _transforms
 
@@ -96,6 +97,9 @@ class DataConfig:
     action_space: droid_rlds_dataset.DroidActionSpace | None = None
     # List of datasets to sample from: name, version, weight, and optionally filter_dict_path
     datasets: Sequence[droid_rlds_dataset.RLDSDataset] = ()
+
+    # RoboSynChallenge sim/real mixture; when set, the torch data loader samples from it instead of `repo_id`.
+    mixture: robosyn_mixture.Mixture | None = None
 
 
 class GroupFactory(Protocol):
@@ -432,6 +436,36 @@ class LeRobotEmbodiChainDataConfig(DataConfigFactory):
             action_sequence_keys=self.action_sequence_keys,
         )
 
+
+@dataclasses.dataclass(frozen=True)
+class LeRobotRoboSynMixtureDataConfig(DataConfigFactory):
+    """Sim + real co-training on the official RoboSynChallenge datasets (see robosyn_mixture.py).
+
+    `repo_id` only names the norm stats (`assets/<config>/<repo_id>`); the data comes from `mixture`.
+    Training and inference use the same transforms as `LeRobotEmbodiChainDataConfig`.
+    """
+
+    mixture: robosyn_mixture.Mixture = dataclasses.field(default_factory=robosyn_mixture.robosyn_mixture)
+    extra_delta_transform: bool = True
+
+    @override
+    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+        data_transforms = _transforms.Group(
+            inputs=[libero_policy.EmbodiChainInputs(model_type=model_config.model_type)],
+            outputs=[libero_policy.EmbodiChainOutputs()],
+        )
+        if self.extra_delta_transform:
+            delta_action_mask = _transforms.make_bool_mask(6, -1, 6, -1)
+            data_transforms = data_transforms.push(
+                inputs=[_transforms.DeltaActions(delta_action_mask)],
+                outputs=[_transforms.AbsoluteActions(delta_action_mask)],
+            )
+        return dataclasses.replace(
+            self.create_base_config(assets_dirs, model_config),
+            data_transforms=data_transforms,
+            model_transforms=ModelTransformFactory()(model_config),
+            mixture=self.mixture,
+        )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -864,6 +898,41 @@ _CONFIGS = [
         num_train_steps=20_000,
         batch_size=64,
         fsdp_devices=1,
+    ),
+    #
+    # RoboSynChallenge final: sim + real co-training on all 10 tasks (robosyn_mixture.py).
+    #
+    TrainConfig(
+        name="pi05_robosyn_smoke",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=50),
+        data=LeRobotRoboSynMixtureDataConfig(
+            repo_id="robosyn_smoke",
+            mixture=robosyn_mixture.robosyn_mixture(tasks=("click_bell", "water_pouring")),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=30,
+        batch_size=32,
+        log_interval=5,
+        save_interval=30,
+        num_workers=16,
+        wandb_enabled=False,
+        fsdp_devices=2,
+    ),
+    TrainConfig(
+        name="pi05_robosyn_mix_r20",
+        model=pi0_config.Pi0Config(pi05=True, action_horizon=50),
+        data=LeRobotRoboSynMixtureDataConfig(
+            repo_id="robosyn_mix_r20",
+            mixture=robosyn_mixture.robosyn_mixture(real_share=0.2),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=30_000,
+        batch_size=64,
+        save_interval=2500,
+        keep_period=5000,
+        num_workers=32,
+        wandb_enabled=False,
+        fsdp_devices=2,
     ),
     TrainConfig(
         name="pi05_libero",
