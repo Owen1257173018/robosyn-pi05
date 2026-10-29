@@ -3,10 +3,17 @@
 import dataclasses
 import os
 
+import numpy as np
 from openpi.policies import policy_config as _policy_config
 from openpi.training import config as _config
 
 PI05_ROOT = os.path.dirname(os.path.abspath(__file__))
+
+# Gripper dims of the 14-dim action. The policy is trained on the normalized opening (0 closed, 1 open);
+# outputs below the threshold are sent as 0, because the sim env reads the gripper in meters (open >= 0.05 m)
+# and a residual such as 0.02 would otherwise half-open a grasp.
+GRIPPER_DIMS = [6, 13]
+GRIPPER_CLOSE_BELOW = 0.25
 
 # Prompts the policy is trained with (`meta/tasks.jsonl`, identical in the official Sim and Real datasets).
 TASK_INSTRUCTIONS = {
@@ -95,7 +102,10 @@ class PI0:
 
     def get_action(self):
         assert self.observation_window is not None, "update observation_window first!"
-        return self.policy.infer(self.observation_window)["actions"]
+        actions = np.array(self.policy.infer(self.observation_window)["actions"])
+        gripper = actions[:, GRIPPER_DIMS]
+        actions[:, GRIPPER_DIMS] = np.where(gripper < GRIPPER_CLOSE_BELOW, 0.0, gripper)
+        return actions
 
     def reset_obsrvationwindows(self):
         self.instruction = None

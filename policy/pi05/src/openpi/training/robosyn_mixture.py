@@ -33,8 +33,8 @@ TASKS = (
 REAL_TO_14 = (*range(0, 7), *range(16, 23))
 # 6 of the 60 episodes of every Real dataset are kept for offline validation.
 REAL_HOLDOUT = (0, 10, 20, 30, 40, 50)
-# Arm joints in the 14-dim layout (grippers are dims 6 and 13).
-ARM_DIMS = (*range(0, 6), *range(7, 13))
+# Grippers in the 14-dim layout (the other dims are the 6 joints of each arm).
+GRIPPER_DIMS = np.array([6, 13])
 
 _CAMERAS = {
     "observation/image": "cam_high",
@@ -58,9 +58,16 @@ class MixtureMember:
     # Stored frames advanced per action step. >1 replays the demonstration faster; every frame stays a valid
     # start, so all phases of the subsampling are used.
     action_stride: float = 1.0
-    # Drop frames before the arms start moving and after they stop.
+    # Drop frames before the robot starts moving and after it stops.
     trim_static: bool = False
     holdout_episodes: tuple[int, ...] = ()
+    # Gripper actions are trained as the normalized opening (0 closed, 1 fully open), like the state.
+    # Sim stores the raw finger target in meters, which the env clips to the 0.05 m joint limit (most experts
+    # command 1.0 to open); scaling and clipping maps it to the normalized opening.
+    gripper_action_scale: float | None = None
+    # Real stores the measured opening as the action, which stays at the object width while holding; label
+    # closing and holding as 0 (close), as the teleop leader commanded.
+    relabel_gripper_hold: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -70,16 +77,22 @@ class Mixture:
     group_weights: tuple[tuple[str, float], ...] = (("sim", 0.8), ("real", 0.2))
     # Inside a group, a member's share is proportional to n ** alpha, n = usable start frames (pi0 uses 0.43).
     balance_alpha: float = 0.43
-    # A frame counts as moving once an arm joint command leaves the first / last command by this much (rad).
+    # A frame counts as moving once an action dim leaves the first / last action by this much.
     static_threshold: float = 0.01
 
 
 def sim_member(task: str) -> MixtureMember:
+    # drawer_open_place already stores normalized gripper actions.
+    scale = None if task == "drawer_open_place" else 1 / 0.05
     if task == "click_bell":  # the only Sim dataset with the older key layout
         return MixtureMember(
-            f"RoboSynChallenge/cobotmagic_Sim_{task}", "sim", state_key="observation.qpos", image_key="{camera}.color"
+            f"RoboSynChallenge/cobotmagic_Sim_{task}",
+            "sim",
+            state_key="observation.qpos",
+            image_key="{camera}.color",
+            gripper_action_scale=scale,
         )
-    return MixtureMember(f"RoboSynChallenge/cobotmagic_Sim_{task}", "sim")
+    return MixtureMember(f"RoboSynChallenge/cobotmagic_Sim_{task}", "sim", gripper_action_scale=scale)
 
 
 def real_member(task: str, action_stride: float = 1.0) -> MixtureMember:
@@ -90,6 +103,7 @@ def real_member(task: str, action_stride: float = 1.0) -> MixtureMember:
         action_stride=action_stride,
         trim_static=True,
         holdout_episodes=REAL_HOLDOUT,
+        relabel_gripper_hold=True,
     )
 
 
@@ -107,13 +121,38 @@ def action_offsets(stride: float, horizon: int) -> np.ndarray:
     return np.array([round(t * stride) for t in range(horizon)], dtype=np.int64)
 
 
-def static_head_tail(arm_actions: np.ndarray, threshold: float) -> tuple[int, int]:
-    """Frames before the first and after the last arm movement of one episode."""
-    moved_from_start = np.nonzero(np.abs(arm_actions - arm_actions[0]).max(axis=1) > threshold)[0]
-    moved_from_end = np.nonzero(np.abs(arm_actions - arm_actions[-1]).max(axis=1) > threshold)[0]
+def static_head_tail(actions: np.ndarray, threshold: float) -> tuple[int, int]:
+    """Frames before the first and after the last movement of one episode."""
+    moved_from_start = np.nonzero(np.abs(actions - actions[0]).max(axis=1) > threshold)[0]
+    moved_from_end = np.nonzero(np.abs(actions - actions[-1]).max(axis=1) > threshold)[0]
     if len(moved_from_start) == 0:
         return 0, 0
-    return int(moved_from_start[0]), int(len(arm_actions) - 1 - moved_from_end[-1])
+    return int(moved_from_start[0]), int(len(actions) - 1 - moved_from_end[-1])
+
+
+def relabel_gripper_hold(opening: np.ndarray, delta: float = 0.08) -> np.ndarray:
+    """Command labels for one episode's measured gripper opening: 0 from the start of a closing motion until
+    the gripper opens again (a move of more than `delta` away from the running extreme switches the mode)."""
+    labels = opening.astype(np.float32).copy()
+    closed = bool(opening[0] < delta)
+    extreme = 0  # running max while open, running min while closed
+    for t in range(len(opening)):
+        if closed:
+            if opening[t] <= opening[extreme]:
+                extreme = t
+            elif opening[t] - opening[extreme] > delta:
+                closed = False
+                labels[extreme + 1 : t + 1] = opening[extreme + 1 : t + 1]
+                extreme = t
+        elif opening[t] >= opening[extreme]:
+            extreme = t
+        elif opening[extreme] - opening[t] > delta:
+            closed = True
+            labels[extreme + 1 : t + 1] = 0.0
+            extreme = t
+        if closed:
+            labels[t] = 0.0
+    return labels
 
 
 class MixtureMemberDataset(torch.utils.data.Dataset):
@@ -128,10 +167,18 @@ class MixtureMemberDataset(torch.utils.data.Dataset):
         self._dims = None if member.dim_indices is None else np.asarray(member.dim_indices)
         self.episode_from = self._dataset.episode_data_index["from"].numpy()
         self.episode_to = self._dataset.episode_data_index["to"].numpy()
-        self.indices = self._start_indices(static_threshold)
+        state, action, episode_index = self._read_columns()
+        if not np.array_equal(episode_index[self.episode_from], np.arange(len(self.episode_from))):
+            raise ValueError(f"{member.repo_id}: episodes are not stored as 0..N-1 in order")
+        self._gripper_labels = None
+        if member.relabel_gripper_hold:
+            self._gripper_labels = np.empty((len(action), len(GRIPPER_DIMS)), dtype=np.float32)
+            for lo, hi in zip(self.episode_from, self.episode_to, strict=True):
+                for i, dim in enumerate(GRIPPER_DIMS):
+                    self._gripper_labels[lo:hi, i] = relabel_gripper_hold(action[lo:hi, dim])
+        self.indices = self._start_indices(self._fix_gripper(action), static_threshold)
 
-    def load_columns(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """(state, action, episode_index) of every stored frame, without decoding videos."""
+    def _read_columns(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         columns = [self.member.state_key, "action", "episode_index"]
         table = self._dataset.hf_dataset.with_format("numpy", columns=columns)[:]
         state = np.stack(table[self.member.state_key]).astype(np.float32)
@@ -140,17 +187,28 @@ class MixtureMemberDataset(torch.utils.data.Dataset):
             state, action = state[:, self._dims], action[:, self._dims]
         return state, action, np.asarray(table["episode_index"])
 
-    def _start_indices(self, static_threshold: float) -> np.ndarray:
-        _, action, episode_index = self.load_columns()
-        if not np.array_equal(episode_index[self.episode_from], np.arange(len(self.episode_from))):
-            raise ValueError(f"{self.member.repo_id}: episodes are not stored as 0..N-1 in order")
+    def _fix_gripper(self, action: np.ndarray, frames: np.ndarray | None = None) -> np.ndarray:
+        """Gripper actions in the training convention; `frames` are the stored frame indices of `action`'s rows
+        (default: all frames)."""
+        if self.member.gripper_action_scale is not None:
+            action[:, GRIPPER_DIMS] = np.clip(action[:, GRIPPER_DIMS] * self.member.gripper_action_scale, 0.0, 1.0)
+        if self._gripper_labels is not None:
+            action[:, GRIPPER_DIMS] = self._gripper_labels if frames is None else self._gripper_labels[frames]
+        return action
+
+    def load_columns(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """(state, action, episode_index) of every stored frame, without decoding videos."""
+        state, action, episode_index = self._read_columns()
+        return state, self._fix_gripper(action), episode_index
+
+    def _start_indices(self, action: np.ndarray, static_threshold: float) -> np.ndarray:
         holdout = set(self.member.holdout_episodes)
         starts = []
         for episode, (lo, hi) in enumerate(zip(self.episode_from, self.episode_to, strict=True)):
             if episode in holdout:
                 continue
             if self.member.trim_static:
-                head, tail = static_head_tail(action[lo:hi][:, ARM_DIMS], static_threshold)
+                head, tail = static_head_tail(action[lo:hi], static_threshold)
                 lo, hi = lo + head, hi - tail
             starts.append(np.arange(lo, hi))
         return np.concatenate(starts)
@@ -159,11 +217,15 @@ class MixtureMemberDataset(torch.utils.data.Dataset):
         return len(self.indices)
 
     def __getitem__(self, index) -> dict:
-        item = self._dataset[int(self.indices[index])]
+        start = int(self.indices[index])
+        item = self._dataset[start]
         state = np.asarray(item[self.member.state_key], dtype=np.float32)
         actions = np.asarray(item["action"], dtype=np.float32)
         if self._dims is not None:
             state, actions = state[..., self._dims], actions[..., self._dims]
+        # Frames of the action chunk, clamped to the episode's last frame like LeRobot does.
+        episode_end = self.episode_to[np.searchsorted(self.episode_to, start, side="right")]
+        actions = self._fix_gripper(actions, np.minimum(start + self.offsets, episode_end - 1))
         sample = {key: item[self.member.image_key.format(camera=camera)] for key, camera in _CAMERAS.items()}
         sample["observation/state"] = state
         sample["actions"] = actions
