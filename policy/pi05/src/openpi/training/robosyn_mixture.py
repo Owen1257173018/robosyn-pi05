@@ -190,8 +190,10 @@ class MixtureMemberDataset(torch.utils.data.Dataset):
         )
         self._tasks = dict(meta.tasks)
         self._dims = None if member.dim_indices is None else np.asarray(member.dim_indices)
-        self.episode_from = self._dataset.episode_data_index["from"].numpy()
-        self.episode_to = self._dataset.episode_data_index["to"].numpy()
+        # Copies, not `.numpy()` views: pickling the dataset for spawn workers moves the tensors to shared memory,
+        # and a view of the old storage would then read freed memory.
+        self.episode_from = np.array(self._dataset.episode_data_index["from"])
+        self.episode_to = np.array(self._dataset.episode_data_index["to"])
         state, action, episode_index = self._read_columns()
         if not np.array_equal(episode_index[self.episode_from], np.arange(len(self.episode_from))):
             raise ValueError(f"{member.repo_id}: episodes are not stored as 0..N-1 in order")
