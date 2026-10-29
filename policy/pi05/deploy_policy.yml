@@ -26,4 +26,5 @@ eval_expert_check: true
 # ------------------------------------------------------------------
 train_config_name: null
 checkpoint_id: 30000
+checkpoint_dir: null # Optional; defaults to policy/pi05/checkpoints/<train_config_name>/<model_name>/<checkpoint_id>
 pi0_step: 10 # It only represents the number of execution steps. not the horizon of reasoning, it's the horizon of execution.

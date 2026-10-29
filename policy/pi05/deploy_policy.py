@@ -90,6 +90,8 @@ def get_model(usr_args):
         checkpoint_id=checkpoint_id,
         pi0_step=pi0_step,
         pytorch_device=pytorch_device,
+        task_name=usr_args.get("task_name"),
+        checkpoint_dir=usr_args.get("checkpoint_dir"),
     )
     return model
 
