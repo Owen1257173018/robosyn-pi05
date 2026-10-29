@@ -129,7 +129,8 @@ def eval(env, model, obs):
 
         if env.get_wrapper_attr("is_task_success")():
             break
-        if truncated.any():
+        # The time limit wrapper returns a plain bool once the step limit is reached, the env a tensor otherwise.
+        if torch.as_tensor(truncated).any():
             break
 
         # Update observation window after each step
