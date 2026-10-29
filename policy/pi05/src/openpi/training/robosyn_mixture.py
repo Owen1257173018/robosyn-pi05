@@ -130,26 +130,28 @@ def static_head_tail(actions: np.ndarray, threshold: float) -> tuple[int, int]:
     return int(moved_from_start[0]), int(len(actions) - 1 - moved_from_end[-1])
 
 
-def relabel_gripper_hold(opening: np.ndarray, delta: float = 0.08) -> np.ndarray:
+def relabel_gripper_hold(opening: np.ndarray, delta: float = 0.08, settle: float = 0.02) -> np.ndarray:
     """Command labels for one episode's measured gripper opening: 0 from the start of a closing motion until
-    the gripper opens again (a move of more than `delta` away from the running extreme switches the mode)."""
+    the gripper opens again. Moving more than `delta` past the running max (open) / min (closed) switches the
+    mode; the motion starts after the last frame within `settle` of that extreme, so a hold that settles
+    slightly above the closing overshoot stays labelled closed."""
     labels = opening.astype(np.float32).copy()
     closed = bool(opening[0] < delta)
-    extreme = 0  # running max while open, running min while closed
-    for t in range(len(opening)):
+    extreme, last = opening[0], 0
+    for t, value in enumerate(opening):
         if closed:
-            if opening[t] <= opening[extreme]:
-                extreme = t
-            elif opening[t] - opening[extreme] > delta:
+            if value - extreme > delta:
                 closed = False
-                labels[extreme + 1 : t + 1] = opening[extreme + 1 : t + 1]
-                extreme = t
-        elif opening[t] >= opening[extreme]:
-            extreme = t
-        elif opening[extreme] - opening[t] > delta:
+                labels[last + 1 : t + 1] = opening[last + 1 : t + 1]
+                extreme, last = value, t
+            elif value <= extreme + settle:
+                extreme, last = min(extreme, value), t
+        elif extreme - value > delta:
             closed = True
-            labels[extreme + 1 : t + 1] = 0.0
-            extreme = t
+            labels[last + 1 : t + 1] = 0.0
+            extreme, last = value, t
+        elif value >= extreme - settle:
+            extreme, last = max(extreme, value), t
         if closed:
             labels[t] = 0.0
     return labels
