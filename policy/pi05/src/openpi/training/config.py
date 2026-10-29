@@ -918,22 +918,30 @@ _CONFIGS = [
         wandb_enabled=False,
         fsdp_devices=2,
     ),
-    TrainConfig(
-        name="pi05_robosyn_mix_r20",
-        model=pi0_config.Pi0Config(pi05=True, action_horizon=50),
-        data=LeRobotRoboSynMixtureDataConfig(
-            repo_id="robosyn_mix_r20",
-            mixture=robosyn_mixture.robosyn_mixture(real_share=0.2),
-        ),
-        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
-        num_train_steps=30_000,
-        batch_size=64,
-        save_interval=2500,
-        keep_period=5000,
-        num_workers=32,
-        wandb_enabled=False,
-        fsdp_devices=2,
-    ),
+    *[
+        TrainConfig(
+            name=f"pi05_robosyn_v1_r{round(100 * real_share)}",
+            model=pi0_config.Pi0Config(pi05=True, action_horizon=50),
+            data=LeRobotRoboSynMixtureDataConfig(
+                repo_id=f"robosyn_v1_r{round(100 * real_share)}",
+                mixture=robosyn_mixture.robosyn_mixture(
+                    real_share=real_share,
+                    real_strides=robosyn_mixture.REAL_STRIDES,
+                    sim_strides=robosyn_mixture.SIM_STRIDES,
+                    trim_sim=True,
+                ),
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+            num_train_steps=30_000,
+            batch_size=64,
+            save_interval=2500,
+            keep_period=5000,
+            num_workers=24,
+            wandb_enabled=False,
+            fsdp_devices=2,
+        )
+        for real_share in (0.2, 0.5)
+    ],
     TrainConfig(
         name="pi05_libero",
         model=pi0_config.Pi0Config(pi05=True, action_horizon=10, discrete_state_input=False),

@@ -81,18 +81,34 @@ class Mixture:
     static_threshold: float = 0.01
 
 
-def sim_member(task: str) -> MixtureMember:
+# Action strides that bring a dataset's moving segments under the step limit H of the random setting
+# (real: p90 moving length <= 0.75 H, capped at 2x; sim items_handover: the expert alone takes 327 of 350 steps).
+REAL_STRIDES = (
+    ("handle_basket", 1.2),
+    ("water_pouring", 1.9),
+    ("table_rearrangement", 1.7),
+    ("items_handover", 1.8),
+    ("mixer_operating", 1.3),
+    ("item_assembly", 1.8),
+    ("sample_loading", 1.6),
+)
+SIM_STRIDES = (("items_handover", 1.2),)
+
+
+def sim_member(task: str, action_stride: float = 1.0, *, trim_static: bool = False) -> MixtureMember:
     # drawer_open_place already stores normalized gripper actions.
     scale = None if task == "drawer_open_place" else 1 / 0.05
+    keys = {}
     if task == "click_bell":  # the only Sim dataset with the older key layout
-        return MixtureMember(
-            f"RoboSynChallenge/cobotmagic_Sim_{task}",
-            "sim",
-            state_key="observation.qpos",
-            image_key="{camera}.color",
-            gripper_action_scale=scale,
-        )
-    return MixtureMember(f"RoboSynChallenge/cobotmagic_Sim_{task}", "sim", gripper_action_scale=scale)
+        keys = {"state_key": "observation.qpos", "image_key": "{camera}.color"}
+    return MixtureMember(
+        f"RoboSynChallenge/cobotmagic_Sim_{task}",
+        "sim",
+        action_stride=action_stride,
+        trim_static=trim_static,
+        gripper_action_scale=scale,
+        **keys,
+    )
 
 
 def real_member(task: str, action_stride: float = 1.0) -> MixtureMember:
@@ -110,10 +126,17 @@ def real_member(task: str, action_stride: float = 1.0) -> MixtureMember:
 def robosyn_mixture(
     real_share: float = 0.2,
     real_strides: tuple[tuple[str, float], ...] = (),
+    sim_strides: tuple[tuple[str, float], ...] = (),
     tasks: tuple[str, ...] = TASKS,
+    *,
+    trim_sim: bool = False,
 ) -> Mixture:
-    strides = dict(real_strides)
-    members = tuple(m for task in tasks for m in (sim_member(task), real_member(task, strides.get(task, 1.0))))
+    real, sim = dict(real_strides), dict(sim_strides)
+    members = tuple(
+        m
+        for task in tasks
+        for m in (sim_member(task, sim.get(task, 1.0), trim_static=trim_sim), real_member(task, real.get(task, 1.0)))
+    )
     return Mixture(members=members, group_weights=(("sim", 1.0 - real_share), ("real", real_share)))
 
 
