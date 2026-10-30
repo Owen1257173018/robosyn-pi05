@@ -27,7 +27,8 @@ shift 5 2>/dev/null || true
 EXTRA_ARGS=("$@")
 
 export CUDA_VISIBLE_DEVICES="$GPU_ID"
-export XLA_PYTHON_CLIENT_MEM_FRACTION=0.4
+# Inference peaks at about 6.7 GiB; raise the fraction on cards below 20 GB, e.g. when no simulator shares the GPU.
+export XLA_PYTHON_CLIENT_MEM_FRACTION="${XLA_PYTHON_CLIENT_MEM_FRACTION:-0.4}"
 
 
 echo "========================================="
