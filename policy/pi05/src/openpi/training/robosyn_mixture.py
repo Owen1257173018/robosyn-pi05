@@ -68,6 +68,10 @@ class MixtureMember:
     # Real stores the measured opening as the action, which stays at the object width while holding; label
     # closing and holding as 0 (close), as the teleop leader commanded.
     relabel_gripper_hold: bool = False
+    # Frames the measured opening rests (within 0.02) before a closing / opening motion; with it set, the motion
+    # is labelled from the end of that rest instead of from the last frame near the previous extreme, so a
+    # partial close that pauses before the grasp is not labelled closed. None keeps the v1 labels.
+    gripper_rest_frames: int | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -111,7 +115,7 @@ def sim_member(task: str, action_stride: float = 1.0, *, trim_static: bool = Fal
     )
 
 
-def real_member(task: str, action_stride: float = 1.0) -> MixtureMember:
+def real_member(task: str, action_stride: float = 1.0, *, gripper_rest_frames: int | None = None) -> MixtureMember:
     return MixtureMember(
         f"RoboSynChallenge/cobotmagic_Real_{task}",
         "real",
@@ -120,6 +124,7 @@ def real_member(task: str, action_stride: float = 1.0) -> MixtureMember:
         trim_static=True,
         holdout_episodes=REAL_HOLDOUT,
         relabel_gripper_hold=True,
+        gripper_rest_frames=gripper_rest_frames,
     )
 
 
@@ -130,12 +135,16 @@ def robosyn_mixture(
     tasks: tuple[str, ...] = TASKS,
     *,
     trim_sim: bool = False,
+    gripper_rest_frames: int | None = None,
 ) -> Mixture:
     real, sim = dict(real_strides), dict(sim_strides)
     members = tuple(
         m
         for task in tasks
-        for m in (sim_member(task, sim.get(task, 1.0), trim_static=trim_sim), real_member(task, real.get(task, 1.0)))
+        for m in (
+            sim_member(task, sim.get(task, 1.0), trim_static=trim_sim),
+            real_member(task, real.get(task, 1.0), gripper_rest_frames=gripper_rest_frames),
+        )
     )
     return Mixture(members=members, group_weights=(("sim", 1.0 - real_share), ("real", real_share)))
 
@@ -153,11 +162,24 @@ def static_head_tail(actions: np.ndarray, threshold: float) -> tuple[int, int]:
     return int(moved_from_start[0]), int(len(actions) - 1 - moved_from_end[-1])
 
 
-def relabel_gripper_hold(opening: np.ndarray, delta: float = 0.08, settle: float = 0.02) -> np.ndarray:
+def _motion_start(opening: np.ndarray, last: int, t: int, settle: float, rest: int) -> int:
+    """First frame of the motion that switched the mode at `t`: right after the latest `rest` frames (all after
+    `last`) that stay within `settle` of each other, or right after `last` if the gripper never rested."""
+    for k in range(t, last + rest, -1):
+        window = opening[k - rest : k]
+        if window.max() - window.min() <= settle:
+            return k
+    return last + 1
+
+
+def relabel_gripper_hold(
+    opening: np.ndarray, delta: float = 0.08, settle: float = 0.02, rest: int | None = None
+) -> np.ndarray:
     """Command labels for one episode's measured gripper opening: 0 from the start of a closing motion until
     the gripper opens again. Moving more than `delta` past the running max (open) / min (closed) switches the
     mode; the motion starts after the last frame within `settle` of that extreme, so a hold that settles
-    slightly above the closing overshoot stays labelled closed."""
+    slightly above the closing overshoot stays labelled closed. With `rest`, the motion starts after the last
+    rest of `rest` frames instead (see `MixtureMember.gripper_rest_frames`)."""
     labels = opening.astype(np.float32).copy()
     closed = bool(opening[0] < delta)
     extreme, last = opening[0], 0
@@ -165,13 +187,14 @@ def relabel_gripper_hold(opening: np.ndarray, delta: float = 0.08, settle: float
         if closed:
             if value - extreme > delta:
                 closed = False
-                labels[last + 1 : t + 1] = opening[last + 1 : t + 1]
+                start = _motion_start(opening, last, t, settle, rest) if rest else last + 1
+                labels[start : t + 1] = opening[start : t + 1]
                 extreme, last = value, t
             elif value <= extreme + settle:
                 extreme, last = min(extreme, value), t
         elif extreme - value > delta:
             closed = True
-            labels[last + 1 : t + 1] = 0.0
+            labels[(_motion_start(opening, last, t, settle, rest) if rest else last + 1) : t + 1] = 0.0
             extreme, last = value, t
         elif value >= extreme - settle:
             extreme, last = max(extreme, value), t
@@ -202,7 +225,9 @@ class MixtureMemberDataset(torch.utils.data.Dataset):
             self._gripper_labels = np.empty((len(action), len(GRIPPER_DIMS)), dtype=np.float32)
             for lo, hi in zip(self.episode_from, self.episode_to, strict=True):
                 for i, dim in enumerate(GRIPPER_DIMS):
-                    self._gripper_labels[lo:hi, i] = relabel_gripper_hold(action[lo:hi, dim])
+                    self._gripper_labels[lo:hi, i] = relabel_gripper_hold(
+                        action[lo:hi, dim], rest=member.gripper_rest_frames
+                    )
         self.indices = self._start_indices(self._fix_gripper(action), static_threshold)
 
     def _read_columns(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
