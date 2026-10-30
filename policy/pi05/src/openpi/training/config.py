@@ -920,15 +920,16 @@ _CONFIGS = [
     ),
     *[
         TrainConfig(
-            name=f"pi05_robosyn_v1_r{round(100 * real_share)}",
+            name=f"pi05_robosyn_{version}_r{round(100 * real_share)}",
             model=pi0_config.Pi0Config(pi05=True, action_horizon=50),
             data=LeRobotRoboSynMixtureDataConfig(
-                repo_id=f"robosyn_v1_r{round(100 * real_share)}",
+                repo_id=f"robosyn_{version}_r{round(100 * real_share)}",
                 mixture=robosyn_mixture.robosyn_mixture(
                     real_share=real_share,
                     real_strides=robosyn_mixture.REAL_STRIDES,
                     sim_strides=robosyn_mixture.SIM_STRIDES,
                     trim_sim=True,
+                    gripper_rest_frames=gripper_rest_frames,
                 ),
             ),
             weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
@@ -940,6 +941,8 @@ _CONFIGS = [
             wandb_enabled=False,
             fsdp_devices=2,
         )
+        # v2: Real gripper labels start a closing / opening after the last rest (WORKLOG P2.6, P2.7).
+        for version, gripper_rest_frames in (("v1", None), ("v2", 5))
         for real_share in (0.2, 0.5)
     ],
     TrainConfig(
