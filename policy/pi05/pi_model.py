@@ -15,6 +15,22 @@ PI05_ROOT = os.path.dirname(os.path.abspath(__file__))
 GRIPPER_DIMS = [6, 13]
 GRIPPER_CLOSE_BELOW = 0.25
 
+# (left, right) grippers the demonstrations open at the start of an episode. The sim env resets with both grippers
+# closed, while the Sim data opens them within one frame (or starts open: drawer, assembly) and the Real data
+# mostly starts open, so the policy keeps copying the closed state; with `open_grippers_at_start` they are opened
+# for the first action chunk. click_bell presses with closed fingers, mixer / pipette keep the left one closed.
+# table_rearrangement opens after ~13 frames, which the policy already learned.
+OPEN_AT_START = {
+    "handle_basket": (True, True),
+    "water_pouring": (True, True),
+    "items_handover": (True, True),
+    "drawer_open_place": (True, True),
+    "mixer_operating": (False, True),
+    "item_assembly": (True, True),
+    "manipulate_pipette": (False, True),
+    "sample_loading": (True, True),
+}
+
 # Prompts the policy is trained with (`meta/tasks.jsonl`, identical in the official Sim and Real datasets).
 TASK_INSTRUCTIONS = {
     "click_bell": "Click the bell",
@@ -41,6 +57,7 @@ class PI0:
         pytorch_device="cuda",
         task_name=None,
         checkpoint_dir=None,
+        open_grippers_at_start=False,
     ):
         self.train_config_name = train_config_name
         self.model_name = model_name
@@ -48,6 +65,8 @@ class PI0:
         self.pytorch_device = pytorch_device
         self.task_name = task_name
         self.checkpoint_dir = checkpoint_dir or self._default_checkpoint_dir()
+        self.open_at_start = np.array(OPEN_AT_START.get(task_name, (False, False)), dtype=bool) & open_grippers_at_start
+        self.episode_start = True
 
         self.policy = self._create_policy(self.pytorch_device)
         print("loading model success!")
@@ -105,9 +124,15 @@ class PI0:
         actions = np.array(self.policy.infer(self.observation_window)["actions"])
         gripper = actions[:, GRIPPER_DIMS]
         actions[:, GRIPPER_DIMS] = np.where(gripper < GRIPPER_CLOSE_BELOW, 0.0, gripper)
+        if self.episode_start and self.open_at_start.any():
+            closed = np.asarray(self.observation_window["observation/state"])[GRIPPER_DIMS] < GRIPPER_CLOSE_BELOW
+            for dim in np.asarray(GRIPPER_DIMS)[closed & self.open_at_start]:
+                actions[:, dim] = 1.0
+        self.episode_start = False
         return actions
 
     def reset_obsrvationwindows(self):
         self.instruction = None
         self.observation_window = None
+        self.episode_start = True
         print("successfully unset obs and language intruction")
