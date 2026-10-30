@@ -91,6 +91,8 @@ class Mixture:
 
 # Action strides that bring a dataset's moving segments under the step limit H of the random setting
 # (real: p90 moving length <= 0.75 H, capped at 2x; sim items_handover: the expert alone takes 327 of 350 steps).
+# The real robot has had a 1000-step limit for every task since FAQ2-18 (2026-10-30), which every Real
+# moving segment already meets, so the v3 configs train Real at its recorded speed.
 REAL_STRIDES = (
     ("handle_basket", 1.2),
     ("water_pouring", 1.9),

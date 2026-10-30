@@ -926,7 +926,7 @@ _CONFIGS = [
                 repo_id=f"robosyn_{version}_r{round(100 * real_share)}",
                 mixture=robosyn_mixture.robosyn_mixture(
                     real_share=real_share,
-                    real_strides=robosyn_mixture.REAL_STRIDES,
+                    real_strides=real_strides,
                     sim_strides=robosyn_mixture.SIM_STRIDES,
                     trim_sim=True,
                     gripper_rest_frames=gripper_rest_frames,
@@ -946,12 +946,16 @@ _CONFIGS = [
         # v2: Real gripper labels start a closing / opening after the last rest (WORKLOG P2.6, P2.7).
         # v2n: v2 + random gripper state inputs, so the policy cannot copy the gripper state (WORKLOG P3.10).
         # v2f / v2nf: v2 / v2n trained on all 60 Real episodes of each task, for final candidates (no offline holdout).
-        for version, gripper_rest_frames, gripper_state_noise, real_holdout in (
-            ("v1", None, 0.0, True),
-            ("v2", 5, 0.0, True),
-            ("v2n", 5, 0.2, True),
-            ("v2f", 5, 0.0, False),
-            ("v2nf", 5, 0.2, False),
+        # v3n / v3f / v3nf: v2n / v2f / v2nf with Real at its recorded speed (no REAL_STRIDES; FAQ2-18, WORKLOG P3.20).
+        for version, gripper_rest_frames, gripper_state_noise, real_holdout, real_strides in (
+            ("v1", None, 0.0, True, robosyn_mixture.REAL_STRIDES),
+            ("v2", 5, 0.0, True, robosyn_mixture.REAL_STRIDES),
+            ("v2n", 5, 0.2, True, robosyn_mixture.REAL_STRIDES),
+            ("v2f", 5, 0.0, False, robosyn_mixture.REAL_STRIDES),
+            ("v2nf", 5, 0.2, False, robosyn_mixture.REAL_STRIDES),
+            ("v3n", 5, 0.2, True, ()),
+            ("v3f", 5, 0.0, False, ()),
+            ("v3nf", 5, 0.2, False, ()),
         )
         for real_share in (0.2, 0.5)
     ],
