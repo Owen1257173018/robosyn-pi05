@@ -669,6 +669,23 @@ class TrainConfig:
             raise ValueError("Cannot resume and overwrite at the same time.")
 
 
+# Data versions of the RoboSynChallenge configs: (version, gripper_rest_frames, gripper_state_noise, real_holdout,
+# real_strides).
+# v2: Real gripper labels start a closing / opening after the last rest (WORKLOG P2.6, P2.7).
+# v2n: v2 + random gripper state inputs, so the policy cannot copy the gripper state (WORKLOG P3.10).
+# v2f / v2nf: v2 / v2n trained on all 60 Real episodes of each task, for final candidates (no offline holdout).
+# v3n / v3f / v3nf: v2n / v2f / v2nf with Real at its recorded speed (no REAL_STRIDES; FAQ2-18, WORKLOG P3.20).
+_ROBOSYN_VERSIONS = (
+    ("v1", None, 0.0, True, robosyn_mixture.REAL_STRIDES),
+    ("v2", 5, 0.0, True, robosyn_mixture.REAL_STRIDES),
+    ("v2n", 5, 0.2, True, robosyn_mixture.REAL_STRIDES),
+    ("v2f", 5, 0.0, False, robosyn_mixture.REAL_STRIDES),
+    ("v2nf", 5, 0.2, False, robosyn_mixture.REAL_STRIDES),
+    ("v3n", 5, 0.2, True, ()),
+    ("v3f", 5, 0.0, False, ()),
+    ("v3nf", 5, 0.2, False, ()),
+)
+
 # Use `get_config` if you need to get a config by name in your code.
 _CONFIGS = [
     #
@@ -943,21 +960,44 @@ _CONFIGS = [
             wandb_enabled=False,
             fsdp_devices=2,
         )
-        # v2: Real gripper labels start a closing / opening after the last rest (WORKLOG P2.6, P2.7).
-        # v2n: v2 + random gripper state inputs, so the policy cannot copy the gripper state (WORKLOG P3.10).
-        # v2f / v2nf: v2 / v2n trained on all 60 Real episodes of each task, for final candidates (no offline holdout).
-        # v3n / v3f / v3nf: v2n / v2f / v2nf with Real at its recorded speed (no REAL_STRIDES; FAQ2-18, WORKLOG P3.20).
-        for version, gripper_rest_frames, gripper_state_noise, real_holdout, real_strides in (
-            ("v1", None, 0.0, True, robosyn_mixture.REAL_STRIDES),
-            ("v2", 5, 0.0, True, robosyn_mixture.REAL_STRIDES),
-            ("v2n", 5, 0.2, True, robosyn_mixture.REAL_STRIDES),
-            ("v2f", 5, 0.0, False, robosyn_mixture.REAL_STRIDES),
-            ("v2nf", 5, 0.2, False, robosyn_mixture.REAL_STRIDES),
-            ("v3n", 5, 0.2, True, ()),
-            ("v3f", 5, 0.0, False, ()),
-            ("v3nf", 5, 0.2, False, ()),
-        )
+        for version, gripper_rest_frames, gripper_state_noise, real_holdout, real_strides in _ROBOSYN_VERSIONS
         for real_share in (0.2, 0.5)
+    ],
+    # Single-task continuation of a multi-task r50 run (WORKLOG P3.19): the same data settings on one task.
+    # Pass the start checkpoint with --weight-loader.params-path, and copy the base run's norm stats to
+    # assets/<this config>/robosyn_<version>_r50/ (the asset id stays the base run's).
+    *[
+        TrainConfig(
+            name=f"pi05_robosyn_{version}_r50_{task}",
+            model=pi0_config.Pi0Config(pi05=True, action_horizon=50),
+            data=LeRobotRoboSynMixtureDataConfig(
+                repo_id=f"robosyn_{version}_r50",
+                mixture=robosyn_mixture.robosyn_mixture(
+                    real_share=0.5,
+                    real_strides=real_strides,
+                    sim_strides=robosyn_mixture.SIM_STRIDES,
+                    tasks=(task,),
+                    trim_sim=True,
+                    gripper_rest_frames=gripper_rest_frames,
+                    gripper_state_noise=gripper_state_noise,
+                    real_holdout=real_holdout,
+                ),
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader("set --weight-loader.params-path"),
+            lr_schedule=_optimizer.CosineDecaySchedule(
+                warmup_steps=200, peak_lr=1e-5, decay_steps=5_000, decay_lr=2.5e-6
+            ),
+            num_train_steps=5_000,
+            batch_size=32,
+            save_interval=1000,
+            keep_period=1000,
+            num_workers=16,
+            wandb_enabled=False,
+            fsdp_devices=2,
+        )
+        for version, gripper_rest_frames, gripper_state_noise, real_holdout, real_strides in _ROBOSYN_VERSIONS
+        if version in ("v2n", "v3f", "v3nf")
+        for task in robosyn_mixture.TASKS
     ],
     TrainConfig(
         name="pi05_libero",
