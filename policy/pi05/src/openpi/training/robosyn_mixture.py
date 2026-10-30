@@ -128,6 +128,7 @@ def real_member(
     *,
     gripper_rest_frames: int | None = None,
     gripper_state_noise: float = 0.0,
+    holdout: bool = True,
 ) -> MixtureMember:
     return MixtureMember(
         f"RoboSynChallenge/cobotmagic_Real_{task}",
@@ -135,7 +136,7 @@ def real_member(
         dim_indices=REAL_TO_14,
         action_stride=action_stride,
         trim_static=True,
-        holdout_episodes=REAL_HOLDOUT,
+        holdout_episodes=REAL_HOLDOUT if holdout else (),
         relabel_gripper_hold=True,
         gripper_rest_frames=gripper_rest_frames,
         gripper_state_noise=gripper_state_noise,
@@ -151,6 +152,7 @@ def robosyn_mixture(
     trim_sim: bool = False,
     gripper_rest_frames: int | None = None,
     gripper_state_noise: float = 0.0,
+    real_holdout: bool = True,
 ) -> Mixture:
     real, sim = dict(real_strides), dict(sim_strides)
     members = tuple(
@@ -163,6 +165,7 @@ def robosyn_mixture(
                 real.get(task, 1.0),
                 gripper_rest_frames=gripper_rest_frames,
                 gripper_state_noise=gripper_state_noise,
+                holdout=real_holdout,
             ),
         )
     )

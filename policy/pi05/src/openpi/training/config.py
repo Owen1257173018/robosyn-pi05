@@ -931,6 +931,7 @@ _CONFIGS = [
                     trim_sim=True,
                     gripper_rest_frames=gripper_rest_frames,
                     gripper_state_noise=gripper_state_noise,
+                    real_holdout=real_holdout,
                 ),
             ),
             weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
@@ -944,7 +945,14 @@ _CONFIGS = [
         )
         # v2: Real gripper labels start a closing / opening after the last rest (WORKLOG P2.6, P2.7).
         # v2n: v2 + random gripper state inputs, so the policy cannot copy the gripper state (WORKLOG P3.10).
-        for version, gripper_rest_frames, gripper_state_noise in (("v1", None, 0.0), ("v2", 5, 0.0), ("v2n", 5, 0.2))
+        # v2f / v2nf: v2 / v2n trained on all 60 Real episodes of each task, for final candidates (no offline holdout).
+        for version, gripper_rest_frames, gripper_state_noise, real_holdout in (
+            ("v1", None, 0.0, True),
+            ("v2", 5, 0.0, True),
+            ("v2n", 5, 0.2, True),
+            ("v2f", 5, 0.0, False),
+            ("v2nf", 5, 0.2, False),
+        )
         for real_share in (0.2, 0.5)
     ],
     TrainConfig(
