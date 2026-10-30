@@ -930,6 +930,7 @@ _CONFIGS = [
                     sim_strides=robosyn_mixture.SIM_STRIDES,
                     trim_sim=True,
                     gripper_rest_frames=gripper_rest_frames,
+                    gripper_state_noise=gripper_state_noise,
                 ),
             ),
             weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
@@ -942,7 +943,8 @@ _CONFIGS = [
             fsdp_devices=2,
         )
         # v2: Real gripper labels start a closing / opening after the last rest (WORKLOG P2.6, P2.7).
-        for version, gripper_rest_frames in (("v1", None), ("v2", 5))
+        # v2n: v2 + random gripper state inputs, so the policy cannot copy the gripper state (WORKLOG P3.10).
+        for version, gripper_rest_frames, gripper_state_noise in (("v1", None, 0.0), ("v2", 5, 0.0), ("v2n", 5, 0.2))
         for real_share in (0.2, 0.5)
     ],
     TrainConfig(

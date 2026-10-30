@@ -72,6 +72,10 @@ class MixtureMember:
     # is labelled from the end of that rest instead of from the last frame near the previous extreme, so a
     # partial close that pauses before the grasp is not labelled closed. None keeps the v1 labels.
     gripper_rest_frames: int | None = None
+    # Probability of replacing each gripper's state input with a random opening. The v1 policy copies the gripper
+    # state, so it never opens grippers the sim env resets closed (the demonstrations open them within a frame or
+    # start open); with noise the opening has to come from the images.
+    gripper_state_noise: float = 0.0
 
 
 @dataclasses.dataclass(frozen=True)
@@ -99,7 +103,9 @@ REAL_STRIDES = (
 SIM_STRIDES = (("items_handover", 1.2),)
 
 
-def sim_member(task: str, action_stride: float = 1.0, *, trim_static: bool = False) -> MixtureMember:
+def sim_member(
+    task: str, action_stride: float = 1.0, *, trim_static: bool = False, gripper_state_noise: float = 0.0
+) -> MixtureMember:
     # drawer_open_place already stores normalized gripper actions.
     scale = None if task == "drawer_open_place" else 1 / 0.05
     keys = {}
@@ -111,11 +117,18 @@ def sim_member(task: str, action_stride: float = 1.0, *, trim_static: bool = Fal
         action_stride=action_stride,
         trim_static=trim_static,
         gripper_action_scale=scale,
+        gripper_state_noise=gripper_state_noise,
         **keys,
     )
 
 
-def real_member(task: str, action_stride: float = 1.0, *, gripper_rest_frames: int | None = None) -> MixtureMember:
+def real_member(
+    task: str,
+    action_stride: float = 1.0,
+    *,
+    gripper_rest_frames: int | None = None,
+    gripper_state_noise: float = 0.0,
+) -> MixtureMember:
     return MixtureMember(
         f"RoboSynChallenge/cobotmagic_Real_{task}",
         "real",
@@ -125,6 +138,7 @@ def real_member(task: str, action_stride: float = 1.0, *, gripper_rest_frames: i
         holdout_episodes=REAL_HOLDOUT,
         relabel_gripper_hold=True,
         gripper_rest_frames=gripper_rest_frames,
+        gripper_state_noise=gripper_state_noise,
     )
 
 
@@ -136,14 +150,20 @@ def robosyn_mixture(
     *,
     trim_sim: bool = False,
     gripper_rest_frames: int | None = None,
+    gripper_state_noise: float = 0.0,
 ) -> Mixture:
     real, sim = dict(real_strides), dict(sim_strides)
     members = tuple(
         m
         for task in tasks
         for m in (
-            sim_member(task, sim.get(task, 1.0), trim_static=trim_sim),
-            real_member(task, real.get(task, 1.0), gripper_rest_frames=gripper_rest_frames),
+            sim_member(task, sim.get(task, 1.0), trim_static=trim_sim, gripper_state_noise=gripper_state_noise),
+            real_member(
+                task,
+                real.get(task, 1.0),
+                gripper_rest_frames=gripper_rest_frames,
+                gripper_state_noise=gripper_state_noise,
+            ),
         )
     )
     return Mixture(members=members, group_weights=(("sim", 1.0 - real_share), ("real", real_share)))
@@ -278,6 +298,11 @@ class MixtureMemberDataset(torch.utils.data.Dataset):
         # Frames of the action chunk, clamped to the episode's last frame like LeRobot does.
         episode_end = self.episode_to[np.searchsorted(self.episode_to, start, side="right")]
         actions = self._fix_gripper(actions, np.minimum(start + self.offsets, episode_end - 1))
+        if self.member.gripper_state_noise:
+            # torch's RNG, which the DataLoader seeds per worker.
+            noisy = GRIPPER_DIMS[(torch.rand(len(GRIPPER_DIMS)) < self.member.gripper_state_noise).numpy()]
+            state = state.copy()
+            state[noisy] = torch.rand(len(noisy)).numpy()
         sample = {key: item[self.member.image_key.format(camera=camera)] for key, camera in _CAMERAS.items()}
         sample["observation/state"] = state
         sample["actions"] = actions
