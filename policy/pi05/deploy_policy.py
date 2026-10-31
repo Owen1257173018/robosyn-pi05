@@ -16,19 +16,29 @@ current_file_path = os.path.abspath(__file__)
 parent_directory = os.path.dirname(current_file_path)
 sys.path.insert(0, parent_directory)
 
-from pi_model import PI0
+from pi_model import GRIPPER_DIMS, PI0
 from policy.inference_timing import finish_inference, start_inference
 
 
-def _format_env_action(action, env):
-    """Convert pi0 output into the torch action format EmbodiChain accepts."""
+def _format_env_action(action, env, rescale_gripper=False):
+    """Convert pi0 output into the torch action format EmbodiChain accepts.
+
+    The policy outputs the gripper as a normalized opening (0 closed, 1 open), the unit of the Real data. With
+    `rescale_gripper` it is mapped into the env's gripper action range, as the official SmolVLA adapter does: the
+    simulator takes the finger position in meters (0-0.05), so without it every output above 0.05 is fully open.
+    """
     action_array = np.asarray(action, dtype=np.float32).reshape(-1)
-    env_action_dim = int(np.prod(env.unwrapped.single_action_space.shape))
+    action_space = env.unwrapped.single_action_space
+    env_action_dim = int(np.prod(action_space.shape))
     if action_array.shape[0] < env_action_dim:
         raise ValueError(
             f"Policy action has dim {action_array.shape[0]}, but env expects {env_action_dim}."
         )
-    action_array = action_array[:env_action_dim]
+    action_array = action_array[:env_action_dim].copy()
+    if rescale_gripper:
+        low = np.asarray(action_space.low, dtype=np.float32).reshape(-1)[GRIPPER_DIMS]
+        high = np.asarray(action_space.high, dtype=np.float32).reshape(-1)[GRIPPER_DIMS]
+        action_array[GRIPPER_DIMS] = low + np.clip(action_array[GRIPPER_DIMS], 0.0, 1.0) * (high - low)
 
     action_tensor = torch.as_tensor(
         action_array, dtype=torch.float32, device=env.unwrapped.device
@@ -94,6 +104,7 @@ def get_model(usr_args):
         checkpoint_dir=usr_args.get("checkpoint_dir"),
         open_grippers_at_start=bool(usr_args.get("open_grippers_at_start", False)),
     )
+    model.rescale_gripper = bool(usr_args.get("rescale_gripper", False))
     return model
 
 
@@ -116,7 +127,7 @@ def eval(env, model, obs):
     img_arr, state = encode_obs(obs)
     model.update_observation_window(img_arr, state)
     actions = model.get_action()[: model.pi0_step]
-    action_tensors = [_format_env_action(action, env) for action in actions]
+    action_tensors = [_format_env_action(action, env, model.rescale_gripper) for action in actions]
     finish_inference(started_at, inference_times_s, model.pytorch_device)
 
     # Execute actions one by one in the environment
