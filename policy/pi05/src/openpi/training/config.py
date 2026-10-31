@@ -964,16 +964,17 @@ _CONFIGS = [
         for real_share in (0.2, 0.5)
     ],
     # Single-task continuation of a multi-task r50 run (WORKLOG P3.19): the same data settings on one task.
+    # The _sim variants leave out Real (WORKLOG P3.42), to see whether mixing in Real costs Sim success.
     # Pass the start checkpoint with --weight-loader.params-path, and copy the base run's norm stats to
     # assets/<this config>/robosyn_<version>_r50/ (the asset id stays the base run's).
     *[
         TrainConfig(
-            name=f"pi05_robosyn_{version}_r50_{task}",
+            name=f"pi05_robosyn_{version}_r50_{task}{suffix}",
             model=pi0_config.Pi0Config(pi05=True, action_horizon=50),
             data=LeRobotRoboSynMixtureDataConfig(
                 repo_id=f"robosyn_{version}_r50",
                 mixture=robosyn_mixture.robosyn_mixture(
-                    real_share=0.5,
+                    real_share=real_share,
                     real_strides=real_strides,
                     sim_strides=robosyn_mixture.SIM_STRIDES,
                     tasks=(task,),
@@ -998,6 +999,7 @@ _CONFIGS = [
         for version, gripper_rest_frames, gripper_state_noise, real_holdout, real_strides in _ROBOSYN_VERSIONS
         if version in ("v2n", "v3f", "v3nf")
         for task in robosyn_mixture.TASKS
+        for suffix, real_share in (("", 0.5), ("_sim", 0.0))
     ],
     TrainConfig(
         name="pi05_libero",
