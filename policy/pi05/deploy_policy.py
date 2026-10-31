@@ -26,6 +26,7 @@ def _format_env_action(action, env, rescale_gripper=False):
     The policy outputs the gripper as a normalized opening (0 closed, 1 open), the unit of the Real data. With
     `rescale_gripper` it is mapped into the env's gripper action range, as the official SmolVLA adapter does: the
     simulator takes the finger position in meters (0-0.05), so without it every output above 0.05 is fully open.
+    A gripper whose declared range is not finite is sent unchanged.
     """
     action_array = np.asarray(action, dtype=np.float32).reshape(-1)
     action_space = env.unwrapped.single_action_space
@@ -38,7 +39,9 @@ def _format_env_action(action, env, rescale_gripper=False):
     if rescale_gripper:
         low = np.asarray(action_space.low, dtype=np.float32).reshape(-1)[GRIPPER_DIMS]
         high = np.asarray(action_space.high, dtype=np.float32).reshape(-1)[GRIPPER_DIMS]
-        action_array[GRIPPER_DIMS] = low + np.clip(action_array[GRIPPER_DIMS], 0.0, 1.0) * (high - low)
+        for dim, lo, hi in zip(GRIPPER_DIMS, low, high):
+            if np.isfinite(lo) and np.isfinite(hi) and hi > lo:
+                action_array[dim] = lo + np.clip(action_array[dim], 0.0, 1.0) * (hi - lo)
 
     action_tensor = torch.as_tensor(
         action_array, dtype=torch.float32, device=env.unwrapped.device
