@@ -1,10 +1,10 @@
 """Close the drawer after the object is placed (drawer_open_place).
 
 The simulator counts drawer_open_place as a success only when the object ends within 0.1 m of the drawer body in
-the XY plane, which needs the drawer closed again, and the real robot is set up like the simulator (FAQ2-11). But
-none of the 60 official Real demonstrations closes it: the right hand grips the handle, pulls the drawer open and
-lets go, the left hand puts the tomato in, and the episode ends. The Sim demonstrations close it while still
-holding the handle.
+the XY plane, which needs the drawer closed again, but none of the 60 official Real demonstrations closes it: the
+right hand grips the handle, pulls the drawer open and lets go, the left hand puts the tomato in, and the episode
+ends. The Sim demonstrations close it while still holding the handle. The real-robot criterion ends with the
+tomato in the open drawer (FAQ2-06), so deploy_policy.yml leaves this rule off and only the simulator turns it on.
 
 After the left gripper has carried something and let go of it, the right arm retraces its own recorded path:
 back to where it let go of the handle, grip, back along the pull to where its fingers closed on the handle
