@@ -4,15 +4,15 @@ FAQ2-10 counts drawer_open_place as a success only once the drawer is closed aga
 Real demonstrations closes it: the right hand grips the handle, pulls the drawer open and lets go, the left hand
 puts the tomato in, and the episode ends. The Sim demonstrations close it while still holding the handle.
 
-After the left gripper has put down what it held, this rule replays the right arm's pull in reverse: back to the
-pose where it let go of the handle, grip, push to the pose where it first gripped the handle (drawer closed),
-let go and stay there. It reads only the proprioception history (joint positions and gripper openings, FAQ2-20)
-and the gripper commands the policy has sent.
+After the left gripper has carried something and let go of it, this rule replays the right arm's pull in
+reverse: back to the pose where it let go of the handle, grip, push to the pose where it first gripped the handle
+(drawer closed), let go and stay there. It reads only the proprioception history (joint positions and gripper
+openings, FAQ2-20) and the gripper commands the policy has sent.
 """
 
 import numpy as np
 
-LEFT_GRIPPER, RIGHT_ARM, RIGHT_GRIPPER = 6, slice(7, 13), 13
+LEFT_ARM, LEFT_GRIPPER, RIGHT_ARM, RIGHT_GRIPPER = slice(0, 6), 6, slice(7, 13), 13
 
 
 def closed_spans(opening, drop=0.15, min_len=5, persist=1):
@@ -76,10 +76,13 @@ def _hold(q, gripper, steps):
 class DrawerCloser:
     """Overrides the right arm (dims 7-13 of the 14-dim action) once the closing motion is planned."""
 
-    def __init__(self, min_hold=30, min_hold_opening=0.1, wait_after_release=10, max_joint_step=0.02,
+    def __init__(self, min_hold=30, min_hold_opening=0.1, min_carry=0.5, wait_after_release=10, max_joint_step=0.02,
                  grip_steps=8, overshoot=0.05):
         self.min_hold = min_hold  # steps the left gripper must have held something
         self.min_hold_opening = min_hold_opening  # an empty grasp closes to ~0; the tomato keeps it above 0.17
+        # joint-space distance (rad) the left arm must have moved between grasp and release: the Real demonstrations
+        # carry the tomato 0.83 or more, a half-closed hover over it in the simulator moved 0.33
+        self.min_carry = min_carry
         self.wait_after_release = wait_after_release  # steps for the left hand to leave the drawer
         self.max_joint_step = max_joint_step
         self.grip_steps = grip_steps
@@ -91,16 +94,22 @@ class DrawerCloser:
         self.triggered_at = None
         self.commands = []  # right gripper commands sent, one per executed step
 
-    def _make_plan(self, history):
+    def release_step(self, history):
+        """Step at which the left gripper let go of the last thing it carried, or None."""
         holds = [
             (a, b)
             for a, b, _ in closed_spans(history[:, LEFT_GRIPPER])
             if b < len(history) and b - a >= self.min_hold and history[a:b, LEFT_GRIPPER].min() >= self.min_hold_opening
+            and np.linalg.norm(history[b - 1, LEFT_ARM] - history[a, LEFT_ARM]) >= self.min_carry
         ]
-        if not holds or len(history) - holds[-1][1] < self.wait_after_release:
+        return holds[-1][1] if holds else None
+
+    def _make_plan(self, history):
+        release = self.release_step(history)
+        if release is None or len(history) - release < self.wait_after_release:
             return None
         command = np.concatenate(self.commands)[: len(history)]
-        poses = handle_poses(command, history[: len(command), RIGHT_GRIPPER], holds[-1][1])
+        poses = handle_poses(command, history[: len(command), RIGHT_GRIPPER], release)
         if poses is None:
             return None
         t_closed, t_open = poses
