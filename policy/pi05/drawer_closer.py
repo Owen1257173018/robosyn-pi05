@@ -1,13 +1,15 @@
 """Close the drawer after the object is placed (drawer_open_place).
 
-FAQ2-10 counts drawer_open_place as a success only once the drawer is closed again, but none of the 60 official
-Real demonstrations closes it: the right hand grips the handle, pulls the drawer open and lets go, the left hand
-puts the tomato in, and the episode ends. The Sim demonstrations close it while still holding the handle.
+The simulator counts drawer_open_place as a success only when the object ends within 0.1 m of the drawer body in
+the XY plane, which needs the drawer closed again, but none of the 60 official Real demonstrations closes it: the
+right hand grips the handle, pulls the drawer open and lets go, the left hand puts the tomato in, and the episode
+ends. The Sim demonstrations close it while still holding the handle. The real-robot criterion ends with the
+tomato in the open drawer (FAQ2-06), so deploy_policy.yml leaves this rule off and only the simulator turns it on.
 
 After the left gripper has carried something and let go of it, the right arm retraces its own recorded path:
 back to where it let go of the handle, grip, back along the pull to where its fingers closed on the handle
 (drawer closed) and a little further, let go and stay there. It reads only the proprioception history (joint
-positions and gripper openings, FAQ2-20) and the gripper commands the policy has sent.
+positions and gripper openings, FAQ2-17) and the gripper commands the policy has sent.
 """
 
 import numpy as np
