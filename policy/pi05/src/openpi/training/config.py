@@ -1002,8 +1002,9 @@ _CONFIGS = [
         for suffix, real_share in (("", 0.5), ("_sim", 0.0))
     ],
     # One model per task (WORKLOG P3.44): pi05_base trained on one task's Sim and Real data with the r50 recipe
-    # of the multi-task runs (30k steps, the default cosine schedule), every 5k checkpoint kept. Norm stats are the
-    # task's own (assets/<this config>/robosyn_<version>_<task>/).
+    # of the multi-task runs, shortened to 20k steps (WORKLOG P3.46; 640k samples, more than the per-task X-VLA
+    # runs of the preliminary round saw), every 5k checkpoint kept. Norm stats are the task's own
+    # (assets/<this config>/robosyn_<version>_<task>/).
     *[
         TrainConfig(
             name=f"pi05_robosyn_{version}_{task}",
@@ -1022,7 +1023,10 @@ _CONFIGS = [
                 ),
             ),
             weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
-            num_train_steps=30_000,
+            lr_schedule=_optimizer.CosineDecaySchedule(
+                warmup_steps=1_000, peak_lr=2.5e-5, decay_steps=20_000, decay_lr=2.5e-6
+            ),
+            num_train_steps=20_000,
             batch_size=32,
             save_interval=5000,
             keep_period=5000,
