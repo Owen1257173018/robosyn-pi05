@@ -4,10 +4,10 @@ FAQ2-10 counts drawer_open_place as a success only once the drawer is closed aga
 Real demonstrations closes it: the right hand grips the handle, pulls the drawer open and lets go, the left hand
 puts the tomato in, and the episode ends. The Sim demonstrations close it while still holding the handle.
 
-After the left gripper has carried something and let go of it, this rule replays the right arm's pull in
-reverse: back to the pose where it let go of the handle, grip, push to the pose where it first gripped the handle
-(drawer closed), let go and stay there. It reads only the proprioception history (joint positions and gripper
-openings, FAQ2-20) and the gripper commands the policy has sent.
+After the left gripper has carried something and let go of it, the right arm retraces its own recorded path:
+back to where it let go of the handle, grip, back along the pull to where its fingers closed on the handle
+(drawer closed) and a little further, let go and stay there. It reads only the proprioception history (joint
+positions and gripper openings, FAQ2-20) and the gripper commands the policy has sent.
 """
 
 import numpy as np
@@ -62,10 +62,27 @@ def handle_poses(command, opening, release, max_grip_ratio=0.3, persist=5):
     return t_closed, (None if last_end == len(command) else last_end - 1)
 
 
-def _move(q_from, q_to, gripper, max_joint_step, min_steps=5):
-    """Right-arm rows (6 joints + gripper) moving linearly in joint space, at most max_joint_step rad per step."""
-    steps = max(min_steps, int(np.ceil(np.abs(q_to - q_from).max() / max_joint_step)))
-    joints = q_from + (q_to - q_from) * np.linspace(1.0 / steps, 1.0, steps)[:, None]
+def _thin(path, eps=0.01):
+    """Points of a joint path at least eps rad apart (largest joint change), both ends kept: drops pauses and
+    encoder jitter before the path is replayed."""
+    kept = [path[0]]
+    for q in path[1:-1]:
+        if np.abs(q - kept[-1]).max() >= eps:
+            kept.append(q)
+    return np.array(kept + [path[-1]])
+
+
+def _arc(points):
+    """Cumulative length of a joint polyline, measured by the largest joint change of each segment."""
+    return np.concatenate([[0.0], np.cumsum(np.abs(np.diff(points, axis=0)).max(axis=1))])
+
+
+def _follow(points, gripper, max_joint_step, min_steps=5):
+    """Right-arm rows (6 joints + gripper) along the joint polyline `points`, at most max_joint_step rad per step."""
+    s = _arc(points)
+    steps = max(min_steps, int(np.ceil(s[-1] / max_joint_step)))
+    at = np.linspace(s[-1] / steps, s[-1], steps)
+    joints = np.stack([np.interp(at, s, points[:, j]) for j in range(points.shape[1])], axis=1)
     return np.concatenate([joints, np.full((steps, 1), gripper)], axis=1)
 
 
@@ -113,16 +130,23 @@ class DrawerCloser:
         if poses is None:
             return None
         t_closed, t_open = poses
-        q_now = history[-1, RIGHT_ARM]
-        q_closed = history[t_closed, RIGHT_ARM]  # gripped the handle, drawer still closed
-        if t_open is None:  # still holding the handle (the Sim way): push straight back
-            q_open = q_now
-            rows = []
-        else:  # let go after pulling (the Real way): go back to the handle and grip it again
-            q_open = history[t_open, RIGHT_ARM]
-            rows = [_move(q_now, q_open, 1.0, self.max_joint_step), _hold(q_open, 0.0, self.grip_steps)]
-        q_push = q_closed + self.overshoot * (q_closed - q_open)
-        rows += [_move(q_open, q_push, 0.0, self.max_joint_step), _hold(q_push, 1.0, self.grip_steps)]
+        # The arm retraces its own recorded joint path: the Real pulls curve in joint space (median 16% of their
+        # length off the straight line between their ends), and the path it took while holding the handle is the
+        # one the drawer allows. pull[0] is where it gripped the handle with the drawer still closed.
+        arm = history[:, RIGHT_ARM]
+        rows = []
+        if t_open is None:  # still holding the handle (the Sim way): push back from here
+            pull = _thin(arm[t_closed:])
+        else:  # let go after pulling (the Real way): back along its path to the handle, open, then grip it again
+            pull = _thin(arm[t_closed : t_open + 1])
+            back = _thin(arm[t_open:])[::-1]
+            rows += [_follow(back, 1.0, self.max_joint_step), _hold(arm[t_open], 0.0, self.grip_steps)]
+        # then a little past the closed pose, continuing the way the pull started (its first fifth)
+        s = _arc(pull)
+        lead = pull[0] - pull[min(int(np.argmax(s >= 0.2 * s[-1])), len(pull) - 1)]
+        q_push = pull[0] + self.overshoot * s[-1] * lead / max(np.abs(lead).max(), 1e-9)
+        push = _follow(np.vstack([pull[::-1], q_push]), 0.0, self.max_joint_step)
+        rows += [push, _hold(q_push, 1.0, self.grip_steps)]
         return np.concatenate(rows)
 
     def __call__(self, actions, history, executed):
