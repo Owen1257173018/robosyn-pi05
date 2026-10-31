@@ -60,6 +60,7 @@ class PI0:
         checkpoint_dir=None,
         open_grippers_at_start=False,
         close_drawer_after_place=False,
+        action_samples=1,
     ):
         self.train_config_name = train_config_name
         self.model_name = model_name
@@ -72,6 +73,8 @@ class PI0:
         # Proprioception of every control step of the episode, for the drawer rule.
         self.state_history = []
         self.drawer_closer = DrawerCloser() if close_drawer_after_place and task_name == "drawer_open_place" else None
+        # Action chunks sampled per inference and averaged; each infer() call draws new flow-matching noise.
+        self.action_samples = max(1, int(action_samples))
 
         self.policy = self._create_policy(self.pytorch_device)
         print("loading model success!")
@@ -130,7 +133,8 @@ class PI0:
         # deploy_policy.eval passes the last observation of the previous chunk again before inferring.
         if len(self.state_history) > 1 and np.array_equal(self.state_history[-1], self.state_history[-2]):
             self.state_history.pop()
-        actions = np.array(self.policy.infer(self.observation_window)["actions"])
+        samples = [np.array(self.policy.infer(self.observation_window)["actions"]) for _ in range(self.action_samples)]
+        actions = samples[0] if len(samples) == 1 else np.mean(samples, axis=0)
         gripper = actions[:, GRIPPER_DIMS]
         actions[:, GRIPPER_DIMS] = np.where(gripper < GRIPPER_CLOSE_BELOW, 0.0, gripper)
         if self.episode_start and self.open_at_start.any():
