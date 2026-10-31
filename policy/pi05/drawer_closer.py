@@ -6,7 +6,8 @@ puts the tomato in, and the episode ends. The Sim demonstrations close it while 
 
 After the left gripper has put down what it held, this rule replays the right arm's pull in reverse: back to the
 pose where it let go of the handle, grip, push to the pose where it first gripped the handle (drawer closed),
-let go and stay there. It reads only the proprioception history (joint positions and gripper openings, FAQ2-20).
+let go and stay there. It reads only the proprioception history (joint positions and gripper openings, FAQ2-20)
+and the gripper commands the policy has sent.
 """
 
 import numpy as np
@@ -14,23 +15,51 @@ import numpy as np
 LEFT_GRIPPER, RIGHT_ARM, RIGHT_GRIPPER = 6, slice(7, 13), 13
 
 
-def closed_spans(opening, drop=0.15, min_len=5):
-    """(start, end) of the spans where a gripper is closed: its opening fell `drop` below the running maximum
-    (holding an object stops it at the object's width), until it opens `drop` above the span's minimum again.
-    A span still closed at the end of `opening` ends at len(opening)."""
-    spans, start, peak = [], None, opening[0]
+def closed_spans(opening, drop=0.15, min_len=5, persist=1):
+    """(start, end, open_level) of the spans where a gripper is closed: its opening fell `drop` below the running
+    maximum `open_level` (holding an object stops it at the object's width), until it is `drop` above the span's
+    minimum again for `persist` steps in a row. A span still closed at the end of `opening` ends at len(opening)."""
+    spans, start, peak, low, above = [], None, (opening[0] if len(opening) else 0.0), 0.0, 0
     for t, value in enumerate(opening):
         if start is None:
             peak = max(peak, value)
             if value < peak - drop:
-                start = t
-        elif value > opening[start : t + 1].min() + drop:
-            if t - start >= min_len:
-                spans.append((start, t))
+                start, low, above = t, value, 0
+            continue
+        low = min(low, value)
+        above = above + 1 if value > low + drop else 0
+        if above >= persist:
+            end = t - persist + 1
+            if end - start >= min_len:
+                spans.append((start, end, peak))
             start, peak = None, value
     if start is not None and len(opening) - start >= min_len:
-        spans.append((start, len(opening)))
+        spans.append((start, len(opening), peak))
     return spans
+
+
+def handle_poses(command, opening, release, max_grip_ratio=0.3, persist=5):
+    """Steps of the right gripper's handle grasp: (t_closed, t_open), or None if it never gripped the handle before
+    `release` (the step the left hand let go of the object).
+
+    command: the right gripper commands sent so far, one per step; opening: its measured opening at those steps.
+    The grips are found on the commands: in the simulator the handle pries the fingers apart during the pull while
+    they are still commanded shut, and the first few actions of a chunk can briefly copy that opening (`persist`).
+    Gripping the thin handle shuts the gripper almost completely (Real data: at most 0.16 of the open level), while
+    the operators sometimes squeeze it halfway on the way to the handle (0.44 and up), which is not a grip.
+    t_closed: the fingers closed on the handle with the drawer still shut (first grip that started before the
+    release); the span itself starts earlier when the gripper half-closes on the way to the handle.
+    t_open: the last step of the latest grip (where it let go of the drawer), or None if it still holds it.
+    """
+    grips = [(a, b) for a, b, level in closed_spans(command, persist=persist)
+             if command[a:b].min() <= max_grip_ratio * level]
+    pulls = [(a, b) for a, b in grips if a < release]
+    if not pulls:
+        return None
+    a, b = pulls[0]
+    t_closed = a + int(np.argmax(opening[a:b] <= opening[a:b].min() + 0.02))
+    last_end = grips[-1][1]
+    return t_closed, (None if last_end == len(command) else last_end - 1)
 
 
 def _move(q_from, q_to, gripper, max_joint_step, min_steps=5):
@@ -60,27 +89,28 @@ class DrawerCloser:
     def reset(self):
         self.plan = None  # remaining right-arm rows; the last row is held after the plan ends
         self.triggered_at = None
+        self.commands = []  # right gripper commands sent, one per executed step
 
     def _make_plan(self, history):
         holds = [
             (a, b)
-            for a, b in closed_spans(history[:, LEFT_GRIPPER])
+            for a, b, _ in closed_spans(history[:, LEFT_GRIPPER])
             if b < len(history) and b - a >= self.min_hold and history[a:b, LEFT_GRIPPER].min() >= self.min_hold_opening
         ]
         if not holds or len(history) - holds[-1][1] < self.wait_after_release:
             return None
-        release = holds[-1][1]
-        pulls = [(a, b) for a, b in closed_spans(history[:, RIGHT_GRIPPER]) if a < release]
-        if not pulls:
+        command = np.concatenate(self.commands)[: len(history)]
+        poses = handle_poses(command, history[: len(command), RIGHT_GRIPPER], holds[-1][1])
+        if poses is None:
             return None
-        grip_start, grip_end = pulls[-1]
+        t_closed, t_open = poses
         q_now = history[-1, RIGHT_ARM]
-        q_closed = history[grip_start, RIGHT_ARM]  # gripped the handle, drawer still closed
-        if grip_end == len(history):  # still holding the handle (the Sim way): push straight back
+        q_closed = history[t_closed, RIGHT_ARM]  # gripped the handle, drawer still closed
+        if t_open is None:  # still holding the handle (the Sim way): push straight back
             q_open = q_now
             rows = []
         else:  # let go after pulling (the Real way): go back to the handle and grip it again
-            q_open = history[grip_end - 1, RIGHT_ARM]
+            q_open = history[t_open, RIGHT_ARM]
             rows = [_move(q_now, q_open, 1.0, self.max_joint_step), _hold(q_open, 0.0, self.grip_steps)]
         q_push = q_closed + self.overshoot * (q_closed - q_open)
         rows += [_move(q_open, q_push, 0.0, self.max_joint_step), _hold(q_push, 1.0, self.grip_steps)]
@@ -89,8 +119,9 @@ class DrawerCloser:
     def __call__(self, actions, history, executed):
         """actions: (horizon, 14) model actions; history: (T, 14) states so far; executed: actions run per call."""
         if self.plan is None and self.triggered_at is None:
-            self.plan = self._make_plan(history)
+            self.plan = self._make_plan(history) if self.commands else None
             if self.plan is None:
+                self.commands.append(np.asarray(actions)[:executed, RIGHT_GRIPPER])
                 return actions
             self.triggered_at = len(history)
             print(f"[drawer_closer] closing the drawer from step {len(history)}: {len(self.plan)} steps")
