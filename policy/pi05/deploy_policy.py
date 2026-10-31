@@ -103,6 +103,7 @@ def get_model(usr_args):
         task_name=usr_args.get("task_name"),
         checkpoint_dir=usr_args.get("checkpoint_dir"),
         open_grippers_at_start=bool(usr_args.get("open_grippers_at_start", False)),
+        close_drawer_after_place=bool(usr_args.get("close_drawer_after_place", False)),
     )
     model.rescale_gripper = bool(usr_args.get("rescale_gripper", False))
     return model

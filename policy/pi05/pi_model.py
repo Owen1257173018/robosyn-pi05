@@ -4,6 +4,7 @@ import dataclasses
 import os
 
 import numpy as np
+from drawer_closer import DrawerCloser
 from openpi.policies import policy_config as _policy_config
 from openpi.training import config as _config
 
@@ -58,6 +59,7 @@ class PI0:
         task_name=None,
         checkpoint_dir=None,
         open_grippers_at_start=False,
+        close_drawer_after_place=False,
     ):
         self.train_config_name = train_config_name
         self.model_name = model_name
@@ -67,6 +69,9 @@ class PI0:
         self.checkpoint_dir = checkpoint_dir or self._default_checkpoint_dir()
         self.open_at_start = np.array(OPEN_AT_START.get(task_name, (False, False)), dtype=bool) & open_grippers_at_start
         self.episode_start = True
+        # Proprioception of every control step of the episode, for the drawer rule.
+        self.state_history = []
+        self.drawer_closer = DrawerCloser() if close_drawer_after_place and task_name == "drawer_open_place" else None
 
         self.policy = self._create_policy(self.pytorch_device)
         print("loading model success!")
@@ -118,9 +123,13 @@ class PI0:
             "observation/state": state,
             "prompt": self.instruction,
         }
+        self.state_history.append(np.array(state, dtype=np.float64).reshape(-1))
 
     def get_action(self):
         assert self.observation_window is not None, "update observation_window first!"
+        # deploy_policy.eval passes the last observation of the previous chunk again before inferring.
+        if len(self.state_history) > 1 and np.array_equal(self.state_history[-1], self.state_history[-2]):
+            self.state_history.pop()
         actions = np.array(self.policy.infer(self.observation_window)["actions"])
         gripper = actions[:, GRIPPER_DIMS]
         actions[:, GRIPPER_DIMS] = np.where(gripper < GRIPPER_CLOSE_BELOW, 0.0, gripper)
@@ -129,10 +138,15 @@ class PI0:
             for dim in np.asarray(GRIPPER_DIMS)[closed & self.open_at_start]:
                 actions[:, dim] = 1.0
         self.episode_start = False
+        if self.drawer_closer is not None and self.state_history:
+            actions = self.drawer_closer(actions, np.stack(self.state_history), self.pi0_step)
         return actions
 
     def reset_obsrvationwindows(self):
         self.instruction = None
         self.observation_window = None
         self.episode_start = True
+        self.state_history = []
+        if self.drawer_closer is not None:
+            self.drawer_closer.reset()
         print("successfully unset obs and language intruction")
