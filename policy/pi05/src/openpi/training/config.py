@@ -1001,6 +1001,39 @@ _CONFIGS = [
         for task in robosyn_mixture.TASKS
         for suffix, real_share in (("", 0.5), ("_sim", 0.0))
     ],
+    # One model per task (WORKLOG P3.44): pi05_base trained on one task's Sim and Real data with the r50 recipe
+    # of the multi-task runs (30k steps, the default cosine schedule), every 5k checkpoint kept. Norm stats are the
+    # task's own (assets/<this config>/robosyn_<version>_<task>/).
+    *[
+        TrainConfig(
+            name=f"pi05_robosyn_{version}_{task}",
+            model=pi0_config.Pi0Config(pi05=True, action_horizon=50),
+            data=LeRobotRoboSynMixtureDataConfig(
+                repo_id=f"robosyn_{version}_{task}",
+                mixture=robosyn_mixture.robosyn_mixture(
+                    real_share=0.5,
+                    real_strides=real_strides,
+                    sim_strides=robosyn_mixture.SIM_STRIDES,
+                    tasks=(task,),
+                    trim_sim=True,
+                    gripper_rest_frames=gripper_rest_frames,
+                    gripper_state_noise=gripper_state_noise,
+                    real_holdout=real_holdout,
+                ),
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+            num_train_steps=30_000,
+            batch_size=32,
+            save_interval=5000,
+            keep_period=5000,
+            num_workers=16,
+            wandb_enabled=False,
+            fsdp_devices=2,
+        )
+        for version, gripper_rest_frames, gripper_state_noise, real_holdout, real_strides in _ROBOSYN_VERSIONS
+        if version == "v3nf"
+        for task in robosyn_mixture.TASKS
+    ],
     TrainConfig(
         name="pi05_libero",
         model=pi0_config.Pi0Config(pi05=True, action_horizon=10, discrete_state_input=False),
