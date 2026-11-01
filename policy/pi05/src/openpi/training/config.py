@@ -1005,12 +1005,14 @@ _CONFIGS = [
     # of the multi-task runs, shortened to 20k steps (WORKLOG P3.46; 640k samples, more than the per-task X-VLA
     # runs of the preliminary round saw), every 5k checkpoint kept. Norm stats are the task's own
     # (assets/<this config>/robosyn_<version>_<task>/).
+    # `_gen` adds the task's locally generated Sim episodes (WORKLOG P3.50: the random config and a wider-randomized
+    # one, half each) as a second Sim member; the Sim half is split between the two by n ** 0.43 as usual.
     *[
         TrainConfig(
-            name=f"pi05_robosyn_{version}_{task}",
+            name=f"pi05_robosyn_{version}_{task}{suffix}",
             model=pi0_config.Pi0Config(pi05=True, action_horizon=50),
             data=LeRobotRoboSynMixtureDataConfig(
-                repo_id=f"robosyn_{version}_{task}",
+                repo_id=f"robosyn_{version}_{task}{suffix}",
                 mixture=robosyn_mixture.robosyn_mixture(
                     real_share=0.5,
                     real_strides=real_strides,
@@ -1020,6 +1022,7 @@ _CONFIGS = [
                     gripper_rest_frames=gripper_rest_frames,
                     gripper_state_noise=gripper_state_noise,
                     real_holdout=real_holdout,
+                    extra_sim=extra_sim,
                 ),
             ),
             weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
@@ -1037,6 +1040,7 @@ _CONFIGS = [
         for version, gripper_rest_frames, gripper_state_noise, real_holdout, real_strides in _ROBOSYN_VERSIONS
         if version == "v3nf"
         for task in robosyn_mixture.TASKS
+        for suffix, extra_sim in (("", ()), ("_gen", ((task, robosyn_mixture.gen_repo_id(task)),)))
     ],
     TrainConfig(
         name="pi05_libero",

@@ -124,6 +124,11 @@ def sim_member(
     )
 
 
+def gen_repo_id(task: str) -> str:
+    """Sim episodes generated locally with the task's expert (WORKLOG P3.50), stored like the official Sim data."""
+    return f"RoboSynGen/cobotmagic_Sim_{task}_gen"
+
+
 def real_member(
     task: str,
     action_stride: float = 1.0,
@@ -155,13 +160,23 @@ def robosyn_mixture(
     gripper_rest_frames: int | None = None,
     gripper_state_noise: float = 0.0,
     real_holdout: bool = True,
+    extra_sim: tuple[tuple[str, str], ...] = (),
 ) -> Mixture:
+    """`extra_sim`: (task, repo_id) pairs of more Sim datasets of a task, read like the task's official one."""
     real, sim = dict(real_strides), dict(sim_strides)
     members = tuple(
         m
         for task in tasks
         for m in (
             sim_member(task, sim.get(task, 1.0), trim_static=trim_sim, gripper_state_noise=gripper_state_noise),
+            *(
+                dataclasses.replace(
+                    sim_member(task, sim.get(task, 1.0), trim_static=trim_sim, gripper_state_noise=gripper_state_noise),
+                    repo_id=repo_id,
+                )
+                for extra_task, repo_id in extra_sim
+                if extra_task == task
+            ),
             real_member(
                 task,
                 real.get(task, 1.0),
