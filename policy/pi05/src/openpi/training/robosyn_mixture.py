@@ -170,9 +170,12 @@ def robosyn_mixture(
         for m in (
             sim_member(task, sim.get(task, 1.0), trim_static=trim_sim, gripper_state_noise=gripper_state_noise),
             *(
+                # Recorded with the current EmbodiChain, so always the default key layout, also for click_bell.
                 dataclasses.replace(
                     sim_member(task, sim.get(task, 1.0), trim_static=trim_sim, gripper_state_noise=gripper_state_noise),
                     repo_id=repo_id,
+                    state_key=MixtureMember.state_key,
+                    image_key=MixtureMember.image_key,
                 )
                 for extra_task, repo_id in extra_sim
                 if extra_task == task
