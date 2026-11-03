@@ -1007,6 +1007,7 @@ _CONFIGS = [
     # (assets/<this config>/robosyn_<version>_<task>/).
     # `_gen` adds the task's locally generated Sim episodes (WORKLOG P3.50: the random config and a wider-randomized
     # one, half each) as a second Sim member; the Sim half is split between the two by n ** 0.43 as usual.
+    # `_gen2` uses a later generation instead (item_assembly: an expert that docks at a fixed place, WORKLOG P3.80).
     *[
         TrainConfig(
             name=f"pi05_robosyn_{version}_{task}{suffix}",
@@ -1040,7 +1041,11 @@ _CONFIGS = [
         for version, gripper_rest_frames, gripper_state_noise, real_holdout, real_strides in _ROBOSYN_VERSIONS
         if version == "v3nf"
         for task in robosyn_mixture.TASKS
-        for suffix, extra_sim in (("", ()), ("_gen", ((task, robosyn_mixture.gen_repo_id(task)),)))
+        for suffix, extra_sim in (
+            ("", ()),
+            ("_gen", ((task, robosyn_mixture.gen_repo_id(task)),)),
+            ("_gen2", ((task, robosyn_mixture.gen_repo_id(task, "2")),)),
+        )
     ],
     TrainConfig(
         name="pi05_libero",

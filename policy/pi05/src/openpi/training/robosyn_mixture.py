@@ -124,9 +124,12 @@ def sim_member(
     )
 
 
-def gen_repo_id(task: str) -> str:
-    """Sim episodes generated locally with the task's expert (WORKLOG P3.50), stored like the official Sim data."""
-    return f"RoboSynGen/cobotmagic_Sim_{task}_gen"
+def gen_repo_id(task: str, suffix: str = "") -> str:
+    """Sim episodes generated locally with the task's expert (WORKLOG P3.50), stored like the official Sim data.
+
+    `suffix` names a later generation with a changed expert, e.g. "2" for item_assembly's fixed docking (WORKLOG P3.80).
+    """
+    return f"RoboSynGen/cobotmagic_Sim_{task}_gen{suffix}"
 
 
 def real_member(
