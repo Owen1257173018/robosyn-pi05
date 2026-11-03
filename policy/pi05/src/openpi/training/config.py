@@ -1008,6 +1008,8 @@ _CONFIGS = [
     # `_gen` adds the task's locally generated Sim episodes (WORKLOG P3.50: the random config and a wider-randomized
     # one, half each) as a second Sim member; the Sim half is split between the two by n ** 0.43 as usual.
     # `_gen2` uses a later generation instead (item_assembly: an expert that docks at a fixed place, WORKLOG P3.80).
+    # `_gen12` adds both generations (sample_loading: the second one is offset above the rack and then aligned with
+    # the hole, WORKLOG P3.82).
     *[
         TrainConfig(
             name=f"pi05_robosyn_{version}_{task}{suffix}",
@@ -1045,6 +1047,7 @@ _CONFIGS = [
             ("", ()),
             ("_gen", ((task, robosyn_mixture.gen_repo_id(task)),)),
             ("_gen2", ((task, robosyn_mixture.gen_repo_id(task, "2")),)),
+            ("_gen12", ((task, robosyn_mixture.gen_repo_id(task)), (task, robosyn_mixture.gen_repo_id(task, "2")))),
         )
     ],
     TrainConfig(
