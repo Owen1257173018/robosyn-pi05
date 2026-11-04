@@ -1010,6 +1010,8 @@ _CONFIGS = [
     # `_gen2` uses a later generation instead (item_assembly: an expert that docks at a fixed place, WORKLOG P3.80).
     # `_gen12` adds both generations (sample_loading: the second one is offset above the rack and then aligned with
     # the hole, WORKLOG P3.82).
+    # `_gen3` uses a third generation alone (item_assembly: the fixed docking plus a closed-loop correction of the left
+    # arm for how the tubes turned in the grippers, WORKLOG P3.86).
     *[
         TrainConfig(
             name=f"pi05_robosyn_{version}_{task}{suffix}",
@@ -1048,6 +1050,7 @@ _CONFIGS = [
             ("_gen", ((task, robosyn_mixture.gen_repo_id(task)),)),
             ("_gen2", ((task, robosyn_mixture.gen_repo_id(task, "2")),)),
             ("_gen12", ((task, robosyn_mixture.gen_repo_id(task)), (task, robosyn_mixture.gen_repo_id(task, "2")))),
+            ("_gen3", ((task, robosyn_mixture.gen_repo_id(task, "3")),)),
         )
     ],
     TrainConfig(
