@@ -1012,6 +1012,9 @@ _CONFIGS = [
     # the hole, WORKLOG P3.82).
     # `_gen3` uses a third generation alone (item_assembly: the fixed docking plus a closed-loop correction of the left
     # arm for how the tubes turned in the grippers, WORKLOG P3.86).
+    # `_gen2only` trains on the second generation as the only Sim data, without the official Sim episodes
+    # (water_pouring: the expert also puts the bottle and the cup back on the table, which the real-robot criterion
+    # requires and the official Sim episodes never do, WORKLOG P3.92).
     *[
         TrainConfig(
             name=f"pi05_robosyn_{version}_{task}{suffix}",
@@ -1028,6 +1031,7 @@ _CONFIGS = [
                     gripper_state_noise=gripper_state_noise,
                     real_holdout=real_holdout,
                     extra_sim=extra_sim,
+                    official_sim=official_sim,
                 ),
             ),
             weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
@@ -1045,12 +1049,13 @@ _CONFIGS = [
         for version, gripper_rest_frames, gripper_state_noise, real_holdout, real_strides in _ROBOSYN_VERSIONS
         if version == "v3nf"
         for task in robosyn_mixture.TASKS
-        for suffix, extra_sim in (
-            ("", ()),
-            ("_gen", ((task, robosyn_mixture.gen_repo_id(task)),)),
-            ("_gen2", ((task, robosyn_mixture.gen_repo_id(task, "2")),)),
-            ("_gen12", ((task, robosyn_mixture.gen_repo_id(task)), (task, robosyn_mixture.gen_repo_id(task, "2")))),
-            ("_gen3", ((task, robosyn_mixture.gen_repo_id(task, "3")),)),
+        for suffix, extra_sim, official_sim in (
+            ("", (), True),
+            ("_gen", ((task, robosyn_mixture.gen_repo_id(task)),), True),
+            ("_gen2", ((task, robosyn_mixture.gen_repo_id(task, "2")),), True),
+            ("_gen12", ((task, robosyn_mixture.gen_repo_id(task)), (task, robosyn_mixture.gen_repo_id(task, "2"))), True),
+            ("_gen3", ((task, robosyn_mixture.gen_repo_id(task, "3")),), True),
+            ("_gen2only", ((task, robosyn_mixture.gen_repo_id(task, "2")),), False),
         )
     ],
     TrainConfig(

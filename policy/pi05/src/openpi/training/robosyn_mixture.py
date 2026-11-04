@@ -164,14 +164,20 @@ def robosyn_mixture(
     gripper_state_noise: float = 0.0,
     real_holdout: bool = True,
     extra_sim: tuple[tuple[str, str], ...] = (),
+    official_sim: bool = True,
 ) -> Mixture:
-    """`extra_sim`: (task, repo_id) pairs of more Sim datasets of a task, read like the task's official one."""
+    """`extra_sim`: (task, repo_id) pairs of more Sim datasets of a task, read like the task's official one.
+    `official_sim=False` leaves the official Sim datasets out, so the Sim half is only `extra_sim`."""
     real, sim = dict(real_strides), dict(sim_strides)
     members = tuple(
         m
         for task in tasks
         for m in (
-            sim_member(task, sim.get(task, 1.0), trim_static=trim_sim, gripper_state_noise=gripper_state_noise),
+            *(
+                (sim_member(task, sim.get(task, 1.0), trim_static=trim_sim, gripper_state_noise=gripper_state_noise),)
+                if official_sim
+                else ()
+            ),
             *(
                 # Recorded with the current EmbodiChain, so always the default key layout, also for click_bell.
                 dataclasses.replace(
