@@ -1015,6 +1015,8 @@ _CONFIGS = [
     # `_gen2only` trains on the second generation as the only Sim data, without the official Sim episodes
     # (water_pouring: the expert also puts the bottle and the cup back on the table, which the real-robot criterion
     # requires and the official Sim episodes never do, WORKLOG P3.92).
+    # `_gen4` adds a fourth generation, `_gen24only` trains on the second and the fourth as the only Sim data
+    # (sample_loading: more episodes offset above the rack and then aligned, with smaller offsets, WORKLOG P3.100).
     *[
         TrainConfig(
             name=f"pi05_robosyn_{version}_{task}{suffix}",
@@ -1056,6 +1058,8 @@ _CONFIGS = [
             ("_gen12", ((task, robosyn_mixture.gen_repo_id(task)), (task, robosyn_mixture.gen_repo_id(task, "2"))), True),
             ("_gen3", ((task, robosyn_mixture.gen_repo_id(task, "3")),), True),
             ("_gen2only", ((task, robosyn_mixture.gen_repo_id(task, "2")),), False),
+            ("_gen4", ((task, robosyn_mixture.gen_repo_id(task, "4")),), True),
+            ("_gen24only", ((task, robosyn_mixture.gen_repo_id(task, "2")), (task, robosyn_mixture.gen_repo_id(task, "4"))), False),
         )
     ],
     TrainConfig(
