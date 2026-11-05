@@ -1019,6 +1019,8 @@ _CONFIGS = [
     # (sample_loading: more episodes offset above the rack and then aligned, with smaller offsets, WORKLOG P3.100).
     # `_gen3only` trains on the third generation as the only Sim data (item_assembly: only episodes whose left arm
     # corrects for how the tubes sit in the grippers, which the official Sim episodes never do, WORKLOG P3.107).
+    # `_gen5` adds a fifth generation, `_gen5only` / `_gen35only` train on it (and the third) as the only Sim data
+    # (item_assembly: both arms are pushed off their way and come back before docking, WORKLOG P3.108).
     *[
         TrainConfig(
             name=f"pi05_robosyn_{version}_{task}{suffix}",
@@ -1063,6 +1065,9 @@ _CONFIGS = [
             ("_gen4", ((task, robosyn_mixture.gen_repo_id(task, "4")),), True),
             ("_gen24only", ((task, robosyn_mixture.gen_repo_id(task, "2")), (task, robosyn_mixture.gen_repo_id(task, "4"))), False),
             ("_gen3only", ((task, robosyn_mixture.gen_repo_id(task, "3")),), False),
+            ("_gen5", ((task, robosyn_mixture.gen_repo_id(task, "5")),), True),
+            ("_gen5only", ((task, robosyn_mixture.gen_repo_id(task, "5")),), False),
+            ("_gen35only", ((task, robosyn_mixture.gen_repo_id(task, "3")), (task, robosyn_mixture.gen_repo_id(task, "5"))), False),
         )
     ],
     TrainConfig(
