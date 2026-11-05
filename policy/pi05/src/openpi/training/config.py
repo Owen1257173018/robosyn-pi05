@@ -1017,6 +1017,8 @@ _CONFIGS = [
     # requires and the official Sim episodes never do, WORKLOG P3.92).
     # `_gen4` adds a fourth generation, `_gen24only` trains on the second and the fourth as the only Sim data
     # (sample_loading: more episodes offset above the rack and then aligned, with smaller offsets, WORKLOG P3.100).
+    # `_gen24` adds the second and the fourth to the official Sim episodes (sample_loading: without the official
+    # episodes the tube landed further from the hole, WORKLOG P3.110).
     # `_gen3only` trains on the third generation as the only Sim data (item_assembly: only episodes whose left arm
     # corrects for how the tubes sit in the grippers, which the official Sim episodes never do, WORKLOG P3.107).
     # `_gen5` adds a fifth generation, `_gen5only` / `_gen35only` train on it (and the third) as the only Sim data
@@ -1064,6 +1066,7 @@ _CONFIGS = [
             ("_gen2only", ((task, robosyn_mixture.gen_repo_id(task, "2")),), False),
             ("_gen4", ((task, robosyn_mixture.gen_repo_id(task, "4")),), True),
             ("_gen24only", ((task, robosyn_mixture.gen_repo_id(task, "2")), (task, robosyn_mixture.gen_repo_id(task, "4"))), False),
+            ("_gen24", ((task, robosyn_mixture.gen_repo_id(task, "2")), (task, robosyn_mixture.gen_repo_id(task, "4"))), True),
             ("_gen3only", ((task, robosyn_mixture.gen_repo_id(task, "3")),), False),
             ("_gen5", ((task, robosyn_mixture.gen_repo_id(task, "5")),), True),
             ("_gen5only", ((task, robosyn_mixture.gen_repo_id(task, "5")),), False),
