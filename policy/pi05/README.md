@@ -1,14 +1,14 @@
 # Team Owen: π0.5 policies for the RoboSynChallenge 2026 final
 
-This directory is our final submission. **Each of the 10 tasks runs with its own π0.5 checkpoint** (task-specific checkpoints, FAQ1). Each one is `pi05_base` fine-tuned on Sim and Real data: nine on their own task alone, table_rearrangement's on all 10 tasks (§1). The Sim data is the task's official Sim dataset (1000 episodes); configs ending in `_gen*` add extra Sim episodes of the task that we generated with the official simulator, and `_gen2only` uses the generated episodes in place of the official ones. Every task's Real dataset (60 episodes) is always used. Every change we made is under `policy/pi05/`, on top of RoboSynChallenge `main` (FAQ2-37).
+This directory is our final submission. **Each of the 10 tasks runs with the π0.5 checkpoint we chose for it** (task-specific checkpoints, FAQ1). Each checkpoint is `pi05_base` fine-tuned on Sim and Real data: eight on their own task alone, and the one that table_rearrangement and item_assembly share on all 10 tasks (§1). The Sim data is the task's official Sim dataset (1000 episodes); configs ending in `_gen*` add extra Sim episodes of the task that we generated with the official simulator, and `_gen2only` uses the generated episodes in place of the official ones. Every task's Real dataset (60 episodes) is always used. Every change we made is under `policy/pi05/`, on top of RoboSynChallenge `main` (FAQ2-37).
 
 ## 1. Checkpoints
 
-All 10 checkpoints are in one Hugging Face model repository: `TODO(submit): <hf_user>/<repo>`, revision `TODO(submit)`. It is gated, with access granted to the `RoboSynChallenge` user.
+All 9 checkpoints are in one Hugging Face model repository: `TODO(submit): <hf_user>/<repo>`, revision `TODO(submit)`. It is gated, with access granted to the `RoboSynChallenge` user.
 
 - The repository uses the layout `eval.sh` expects by default, `<train_config_name>/<model_name>/<checkpoint_id>/`. Downloading it into `policy/pi05/checkpoints/` (§2) puts every checkpoint where the commands of §3 look for it.
 - Each checkpoint folder holds `params/` (bfloat16 weights, about 4.9 GiB), `assets/<asset_id>/norm_stats.json` (the task's own normalization statistics) and `_CHECKPOINT_METADATA`.
-- Run every task with its own checkpoint from the table. table_rearrangement's (`pi05_robosyn_v3nf_r50`) was trained on all 10 tasks for 30k steps and did better on that task than our single-task model; the others were trained on their own task for 20k steps.
+- Run every task with its checkpoint from the table. table_rearrangement and item_assembly share `pi05_robosyn_v3nf_r50`, which was trained on all 10 tasks for 30k steps and did better on these two tasks than our single-task models; the others were trained on their own task for 20k steps.
 
 | Task | `train_config_name` | `model_name` | `checkpoint_id` |
 |---|---|---|---|
@@ -19,7 +19,7 @@ All 10 checkpoints are in one Hugging Face model repository: `TODO(submit): <hf_
 | items_handover | `pi05_robosyn_v3nf_items_handover_gen` | `v3nf_items_handover_gen` | `19999` |
 | drawer_open_place | `pi05_robosyn_v3nf_drawer_open_place_gen` | `v3nf_drawer_open_place_gen` | `19999` |
 | mixer_operating | `pi05_robosyn_v3nf_mixer_operating_gen` | `v3nf_mixer_operating_gen` | `19999` |
-| item_assembly | `TODO(submit)` | `TODO(submit)` | `TODO(submit)` |
+| item_assembly | `pi05_robosyn_v3nf_r50` | `v3nf_r50` | `29999` |
 | manipulate_pipette | `pi05_robosyn_v3nf_manipulate_pipette_gen2` | `v3nf_manipulate_pipette_gen2` | `19999` |
 | sample_loading | `TODO(submit)` | `TODO(submit)` | `TODO(submit)` |
 
@@ -35,7 +35,7 @@ cd RoboSynChallenge/policy/pi05
 GIT_LFS_SKIP_SMUDGE=1 uv sync          # creates policy/pi05/.venv (Python 3.11)
 cp -r ./src/openpi/models_pytorch/transformers_replace/* .venv/lib/python3.11/site-packages/transformers/
 
-# Weights of all 10 tasks (about 49 GiB), into checkpoints/<train_config_name>/<model_name>/<checkpoint_id>/.
+# Weights of all 10 tasks (9 checkpoints, about 44 GiB), into checkpoints/<train_config_name>/<model_name>/<checkpoint_id>/.
 # For one task only, add --include "<train_config_name>/*" with the task's config from §1.
 .venv/bin/huggingface-cli download TODO(submit) --revision TODO(submit) --local-dir checkpoints
 ```
@@ -73,7 +73,7 @@ In the simulator, drawer_open_place also passes `--close_drawer_after_place True
 | items_handover | `bash eval.sh items_handover random pi05_robosyn_v3nf_items_handover_gen v3nf_items_handover_gen 0 --checkpoint_id 19999` |
 | drawer_open_place | `bash eval.sh drawer_open_place random pi05_robosyn_v3nf_drawer_open_place_gen v3nf_drawer_open_place_gen 0 --checkpoint_id 19999 --close_drawer_after_place True` |
 | mixer_operating | `bash eval.sh mixer_operating random pi05_robosyn_v3nf_mixer_operating_gen v3nf_mixer_operating_gen 0 --checkpoint_id 19999` |
-| item_assembly | `TODO(submit)` |
+| item_assembly | `bash eval.sh item_assembly random pi05_robosyn_v3nf_r50 v3nf_r50 0 --checkpoint_id 29999` |
 | manipulate_pipette | `bash eval.sh manipulate_pipette random pi05_robosyn_v3nf_manipulate_pipette_gen2 v3nf_manipulate_pipette_gen2 0 --checkpoint_id 19999` |
 | sample_loading | `TODO(submit)` |
 
@@ -109,7 +109,7 @@ On the real robot, use the same entry points of `deploy_policy.py` (`get_model`,
 
 ## 6. Training (for reference)
 
-One run per task, each from `pi05_base`, with the task's `train_config_name` and `model_name` from §1:
+One run per checkpoint, each from `pi05_base`, with the task's `train_config_name` and `model_name` from §1:
 
 ```bash
 # Data under $HF_LEROBOT_HOME: the official RoboSynChallenge/cobotmagic_{Sim,Real}_<task>, and for the _gen* configs
@@ -119,16 +119,16 @@ XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run scripts/train.py <train_config_name> -
 ```
 
 The configs are in `src/openpi/training/config.py`, the data mixture in `src/openpi/training/robosyn_mixture.py`:
-- The single-task configs train for 20k steps; `pi05_robosyn_v3nf_r50` (table_rearrangement) trains for 30k steps on all 10 tasks.
+- The single-task configs train for 20k steps; `pi05_robosyn_v3nf_r50` (table_rearrangement, item_assembly) trains for 30k steps on all 10 tasks.
 - Half of the training samples come from Sim data and half from Real data.
 - The Sim half is split between the config's Sim datasets: each one's share grows with its number of usable frames n as n^0.43. `_gen` and `_gen2` add the first or the second generation of our episodes to the official Sim episodes; `_gen2only` uses the second generation in their place.
 - Real states and actions are mapped to the 14-dim Sim layout.
 - While a Real gripper holds an object, its label is set to closed.
-- The generated episodes come from the task's official simulator configuration (`configs/<task>/`), with seeds other than the official data's. For half of them the scene randomization is wider: light intensity, `cam_high` pose (±2 cm), and object positions and yaw ranges, which are not widened for item_assembly. Only episodes the expert completes are recorded.
+- The generated episodes come from the task's official simulator configuration (`configs/<task>/`), with seeds other than the official data's. For half of them the scene randomization is wider: light intensity, `cam_high` pose (±2 cm), and object positions and yaw ranges. Only episodes the expert completes are recorded.
 - The first generation uses the official expert. For the later ones we changed the expert (for data generation only):
   - water_pouring (`_gen2only`): after pouring, the expert also puts the bottle and the cup back on the table, which the real-robot criterion requires (FAQ2-06) and the official Sim episodes never do.
   - manipulate_pipette (`_gen2`): the left hand presses the plunger 1.3 cm deeper (`pipette_left_arm_press_offset` −0.032 → −0.045 m in the expert's action config).
-  - item_assembly, sample_loading: `TODO(submit)`.
+  - sample_loading: `TODO(submit)`.
 
 ---
 
