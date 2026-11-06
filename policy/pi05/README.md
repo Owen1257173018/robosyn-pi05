@@ -47,10 +47,12 @@ cp -r ./src/openpi/models_pytorch/transformers_replace/* .venv/lib/python3.11/si
   - `eval.sh` gives JAX 40% of the card unless `XLA_PYTHON_CLIENT_MEM_FRACTION` is already set.
   - On cards below 20 GB, set it higher, e.g. `XLA_PYTHON_CLIENT_MEM_FRACTION=0.6`.
 - **Tested setups**:
-  - Clean clone, install and inference: RTX 4080 SUPER (32 GB), Ubuntu 22.04, driver 580.
+  - Clean clone, install, and one simulator episode of each command in §3: RTX 4080 SUPER (32 GB), Ubuntu 22.04, driver 580.
   - Training and simulation evaluation: A100 80GB, Ubuntu 24.04, driver 570.
 - **Weights elsewhere**: pass `--checkpoint_dir <dir>`, the folder that holds the task's `params/`.
-- **Troubleshooting**: if XLA fails with `CUDA_ERROR_INVALID_IMAGE`, it picked up `ptxas` / `nvlink` from a CUDA toolkit newer than the driver, e.g. `/usr/local/cuda` → CUDA 13 under a 12.8 driver. Put the `bin/` of a toolkit that matches the driver first on `PATH`.
+- **Troubleshooting**:
+  - If XLA fails with `CUDA_ERROR_INVALID_IMAGE`, it picked up `ptxas` / `nvlink` from a CUDA toolkit newer than the driver, e.g. `/usr/local/cuda` → CUDA 13 under a 12.8 driver. Put the `bin/` of a toolkit that matches the driver first on `PATH`.
+  - Keep the absolute path of the `RoboSynChallenge` folder under about 100 characters. The simulator loads the distractor models by absolute path, up to 74 characters past that folder. From a clone under a 126-character path, dexsim failed an assertion (`DFString.h:94` in `OptiXMaterialMgr::CreateMaterial`) on a 197-character model path and hung. The same clone ran fine from a 36-character path.
 
 ## 3. Commands for each task
 
