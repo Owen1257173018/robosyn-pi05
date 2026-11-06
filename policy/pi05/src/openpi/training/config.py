@@ -1025,6 +1025,8 @@ _CONFIGS = [
     # (item_assembly: both arms are pushed off their way and come back before docking, WORKLOG P3.108).
     # `_gen6` adds a sixth generation made like the fifth, `_gen56` / `_gen56only` add both, with / without the
     # official Sim episodes (item_assembly: more episodes of the fifth's expert, WORKLOG P3.111).
+    # `_gen245` adds the second, fourth and fifth to the official Sim episodes (sample_loading: a fifth generation made
+    # like the fourth, WORKLOG P3.114).
     *[
         TrainConfig(
             name=f"pi05_robosyn_{version}_{task}{suffix}",
@@ -1076,6 +1078,7 @@ _CONFIGS = [
             ("_gen6", ((task, robosyn_mixture.gen_repo_id(task, "6")),), True),
             ("_gen56", ((task, robosyn_mixture.gen_repo_id(task, "5")), (task, robosyn_mixture.gen_repo_id(task, "6"))), True),
             ("_gen56only", ((task, robosyn_mixture.gen_repo_id(task, "5")), (task, robosyn_mixture.gen_repo_id(task, "6"))), False),
+            ("_gen245", ((task, robosyn_mixture.gen_repo_id(task, "2")), (task, robosyn_mixture.gen_repo_id(task, "4")), (task, robosyn_mixture.gen_repo_id(task, "5"))), True),
         )
     ],
     TrainConfig(
