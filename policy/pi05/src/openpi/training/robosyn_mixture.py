@@ -76,6 +76,11 @@ class MixtureMember:
     # state, so it never opens grippers the sim env resets closed (the demonstrations open them within a frame or
     # start open); with noise the opening has to come from the images.
     gripper_state_noise: float = 0.0
+    # Sampling weight of the start frames from `focus_frames` before to `FOCUS_AFTER` after an episode's last
+    # gripper opening, relative to its other start frames; the member's share stays the same. >1 trains the final
+    # placement more often (sample_loading: aligning the tube with the hole and pushing it in, WORKLOG P3.129).
+    focus_weight: float = 1.0
+    focus_frames: int = 100
 
 
 @dataclasses.dataclass(frozen=True)
@@ -165,9 +170,11 @@ def robosyn_mixture(
     real_holdout: bool = True,
     extra_sim: tuple[tuple[str, str], ...] = (),
     official_sim: bool = True,
+    focus_weight: float = 1.0,
 ) -> Mixture:
     """`extra_sim`: (task, repo_id) pairs of more Sim datasets of a task, read like the task's official one.
-    `official_sim=False` leaves the official Sim datasets out, so the Sim half is only `extra_sim`."""
+    `official_sim=False` leaves the official Sim datasets out, so the Sim half is only `extra_sim`.
+    `focus_weight` is every member's `MixtureMember.focus_weight`."""
     real, sim = dict(real_strides), dict(sim_strides)
     members = tuple(
         m
@@ -198,6 +205,8 @@ def robosyn_mixture(
             ),
         )
     )
+    if focus_weight != 1.0:
+        members = tuple(dataclasses.replace(m, focus_weight=focus_weight) for m in members)
     return Mixture(members=members, group_weights=(("sim", 1.0 - real_share), ("real", real_share)))
 
 
@@ -212,6 +221,26 @@ def static_head_tail(actions: np.ndarray, threshold: float) -> tuple[int, int]:
     if len(moved_from_start) == 0:
         return 0, 0
     return int(moved_from_start[0]), int(len(actions) - 1 - moved_from_end[-1])
+
+
+# Frames after the last gripper opening that `MixtureMember.focus_weight` still covers.
+FOCUS_AFTER = 5
+
+
+def last_opening(actions: np.ndarray, min_range: float = 0.3) -> int | None:
+    """Frame of one episode's last gripper opening (gripper actions in the training convention): the last upward
+    crossing of the midpoint between a gripper's lowest and highest action, over both grippers. None if no gripper
+    action spans `min_range`."""
+    last = None
+    for dim in GRIPPER_DIMS:
+        opening = actions[:, dim]
+        if opening.max() - opening.min() < min_range:
+            continue
+        mid = (opening.max() + opening.min()) / 2
+        ups = np.nonzero((opening[:-1] < mid) & (opening[1:] >= mid))[0]
+        if len(ups):
+            last = max(last or 0, int(ups[-1]) + 1)
+    return last
 
 
 def _motion_start(opening: np.ndarray, last: int, t: int, settle: float, rest: int) -> int:
@@ -280,7 +309,10 @@ class MixtureMemberDataset(torch.utils.data.Dataset):
                     self._gripper_labels[lo:hi, i] = relabel_gripper_hold(
                         action[lo:hi, dim], rest=member.gripper_rest_frames
                     )
-        self.indices = self._start_indices(self._fix_gripper(action), static_threshold)
+        action = self._fix_gripper(action)
+        self.indices = self._start_indices(action, static_threshold)
+        # Relative sampling weight of each start frame in `indices`.
+        self.weights = self._start_weights(action)
 
     def _read_columns(self) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         columns = [self.member.state_key, "action", "episode_index"]
@@ -316,6 +348,16 @@ class MixtureMemberDataset(torch.utils.data.Dataset):
                 lo, hi = lo + head, hi - tail
             starts.append(np.arange(lo, hi))
         return np.concatenate(starts)
+
+    def _start_weights(self, action: np.ndarray) -> np.ndarray:
+        weights = np.ones(len(action))
+        if self.member.focus_weight != 1.0:
+            for lo, hi in zip(self.episode_from, self.episode_to, strict=True):
+                release = last_opening(action[lo:hi])
+                if release is not None:
+                    begin = lo + max(0, release - self.member.focus_frames)
+                    weights[begin : lo + min(hi - lo, release + FOCUS_AFTER + 1)] = self.member.focus_weight
+        return weights[self.indices]
 
     def __len__(self) -> int:
         return len(self.indices)
@@ -359,11 +401,15 @@ def build_mixture(mixture: Mixture, action_horizon: int) -> tuple[torch.utils.da
     members = [MixtureMemberDataset(m, action_horizon, mixture.static_threshold) for m in mixture.members]
     weights = member_weights(mixture, [len(m) for m in members])
     for member, weight in zip(members, weights, strict=True):
+        focus = ""
+        if member.member.focus_weight != 1.0:
+            # Share of the member's samples that start in the focused frames.
+            focus = f" focus={member.weights[member.weights != 1.0].sum() / member.weights.sum():.4f}"
         logging.info(
             f"mixture: {member.member.repo_id} frames={len(member)} share={weight:.4f} "
-            f"stride={member.member.action_stride}"
+            f"stride={member.member.action_stride}{focus}"
         )
-    sample_weights = np.concatenate([np.full(len(m), w / len(m)) for m, w in zip(members, weights, strict=True)])
+    sample_weights = np.concatenate([w * m.weights / m.weights.sum() for m, w in zip(members, weights, strict=True)])
     return torch.utils.data.ConcatDataset(members), sample_weights
 
 
@@ -377,7 +423,8 @@ def sample_state_actions(
     states, chunks = [], []
     for member, count in zip(members, counts, strict=True):
         state, action, episode_index = member.load_columns()
-        starts = rng.choice(member.indices, size=count, replace=True)
+        p = None if member.member.focus_weight == 1.0 else member.weights / member.weights.sum()
+        starts = rng.choice(member.indices, size=count, replace=True, p=p)
         episode_end = member.episode_to[episode_index[starts]]
         # LeRobot clamps chunk indices to the episode's last frame.
         frames = np.minimum(starts[:, None] + member.offsets[None, :], episode_end[:, None] - 1)

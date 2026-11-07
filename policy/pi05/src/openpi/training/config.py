@@ -1027,6 +1027,8 @@ _CONFIGS = [
     # official Sim episodes (item_assembly: more episodes of the fifth's expert, WORKLOG P3.111).
     # `_gen245` adds the second, fourth and fifth to the official Sim episodes (sample_loading: a fifth generation made
     # like the fourth, WORKLOG P3.114).
+    # `_gen12f` is `_gen12` with the last 100 frames before each episode's final release sampled 3x as often
+    # (sample_loading: the tube lands about 7 mm off the hole and only goes in within about 2 mm, WORKLOG P3.129).
     *[
         TrainConfig(
             name=f"pi05_robosyn_{version}_{task}{suffix}",
@@ -1044,6 +1046,7 @@ _CONFIGS = [
                     real_holdout=real_holdout,
                     extra_sim=extra_sim,
                     official_sim=official_sim,
+                    focus_weight=3.0 if suffix == "_gen12f" else 1.0,
                 ),
             ),
             weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
@@ -1079,6 +1082,7 @@ _CONFIGS = [
             ("_gen56", ((task, robosyn_mixture.gen_repo_id(task, "5")), (task, robosyn_mixture.gen_repo_id(task, "6"))), True),
             ("_gen56only", ((task, robosyn_mixture.gen_repo_id(task, "5")), (task, robosyn_mixture.gen_repo_id(task, "6"))), False),
             ("_gen245", ((task, robosyn_mixture.gen_repo_id(task, "2")), (task, robosyn_mixture.gen_repo_id(task, "4")), (task, robosyn_mixture.gen_repo_id(task, "5"))), True),
+            ("_gen12f", ((task, robosyn_mixture.gen_repo_id(task)), (task, robosyn_mixture.gen_repo_id(task, "2"))), True),
         )
     ],
     TrainConfig(
