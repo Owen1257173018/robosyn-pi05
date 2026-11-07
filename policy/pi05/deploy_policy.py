@@ -108,6 +108,7 @@ def get_model(usr_args):
         open_grippers_at_start=bool(usr_args.get("open_grippers_at_start", False)),
         close_drawer_after_place=bool(usr_args.get("close_drawer_after_place", False)),
         action_samples=int(usr_args.get("action_samples", 1)),
+        noise_scale=float(usr_args.get("noise_scale", 1.0)),
     )
     model.rescale_gripper = bool(usr_args.get("rescale_gripper", False))
     return model

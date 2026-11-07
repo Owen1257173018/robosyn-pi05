@@ -61,6 +61,7 @@ class PI0:
         open_grippers_at_start=False,
         close_drawer_after_place=False,
         action_samples=1,
+        noise_scale=1.0,
     ):
         self.train_config_name = train_config_name
         self.model_name = model_name
@@ -75,6 +76,12 @@ class PI0:
         self.drawer_closer = DrawerCloser() if close_drawer_after_place and task_name == "drawer_open_place" else None
         # Action chunks sampled per inference and averaged; each infer() call draws new flow-matching noise.
         self.action_samples = max(1, int(action_samples))
+        # Scale of the flow-matching noise each chunk is sampled from: at 1 the policy draws the trained N(0, I)
+        # itself; smaller values sample closer to the most likely chunk, 0 deterministically from zero noise.
+        self.noise_scale = float(noise_scale)
+        model_config = self._config_for_device(pytorch_device).model
+        self.noise_shape = (model_config.action_horizon, model_config.action_dim)
+        self.noise_rng = np.random.default_rng(0)
 
         self.policy = self._create_policy(self.pytorch_device)
         print("loading model success!")
@@ -133,7 +140,10 @@ class PI0:
         # deploy_policy.eval passes the last observation of the previous chunk again before inferring.
         if len(self.state_history) > 1 and np.array_equal(self.state_history[-1], self.state_history[-2]):
             self.state_history.pop()
-        samples = [np.array(self.policy.infer(self.observation_window)["actions"]) for _ in range(self.action_samples)]
+        samples = [
+            np.array(self.policy.infer(self.observation_window, **self._noise())["actions"])
+            for _ in range(self.action_samples)
+        ]
         actions = samples[0] if len(samples) == 1 else np.mean(samples, axis=0)
         gripper = actions[:, GRIPPER_DIMS]
         actions[:, GRIPPER_DIMS] = np.where(gripper < GRIPPER_CLOSE_BELOW, 0.0, gripper)
@@ -145,6 +155,12 @@ class PI0:
         if self.drawer_closer is not None and self.state_history:
             actions = self.drawer_closer(actions, np.stack(self.state_history), self.pi0_step)
         return actions
+
+    # infer() kwargs for one chunk: none at noise scale 1, else the scaled noise.
+    def _noise(self):
+        if self.noise_scale == 1.0:
+            return {}
+        return {"noise": (self.noise_scale * self.noise_rng.standard_normal(self.noise_shape)).astype(np.float32)}
 
     def reset_obsrvationwindows(self):
         self.instruction = None

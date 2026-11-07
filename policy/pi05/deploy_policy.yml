@@ -29,6 +29,7 @@ checkpoint_id: 30000
 checkpoint_dir: null # Optional; defaults to policy/pi05/checkpoints/<train_config_name>/<model_name>/<checkpoint_id>
 pi0_step: 10 # It only represents the number of execution steps. not the horizon of reasoning, it's the horizon of execution.
 action_samples: 1 # Action chunks sampled per inference (each with new flow-matching noise) and averaged.
+noise_scale: 1.0 # Scale of the flow-matching noise each chunk is sampled from: 1 is the trained distribution, smaller values sample closer to the most likely chunk, 0 is deterministic.
 open_grippers_at_start: true # Open the grippers the demonstrations open at the start (pi_model.OPEN_AT_START) for the first chunk.
 close_drawer_after_place: false # drawer_open_place only: after the object is placed, push the drawer shut by reversing the right arm's pull (drawer_closer.py). The real-robot criterion ends with the object in the open drawer (FAQ2-06); true in the simulator, whose success check (object within 0.1 m of the drawer body in XY) needs the drawer closed.
 rescale_gripper: true # Map the gripper output (normalized opening, as in the Real data) into the env's gripper action range, as the official SmolVLA adapter does: the simulator takes meters (0-0.05), and the real robot takes the same actions as the simulator (FAQ2-11).
