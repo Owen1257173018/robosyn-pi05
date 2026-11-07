@@ -31,6 +31,8 @@ class Pi0Config(_model.BaseModelConfig):
     pi05: bool = False
     # This config option is not used directly by the model, but it is read by the ModelTransformFactory.
     discrete_state_input: bool = None  # type: ignore
+    # Train with the random crop and rotation of the non-wrist images (training only; the color jitter always stays).
+    image_geometric_aug: bool = True
 
     pytorch_compile_mode: str | None = "max-autotune"
 
