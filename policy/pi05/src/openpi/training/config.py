@@ -963,6 +963,39 @@ _CONFIGS = [
         for version, gripper_rest_frames, gripper_state_noise, real_holdout, real_strides in _ROBOSYN_VERSIONS
         for real_share in (0.2, 0.5)
     ],
+    # r50 with item_assembly and sample_loading drawn 3.5x as often (about 25% of the samples each instead of 11%),
+    # for those two tasks only: every single-task item_assembly model was far below r50 on item_assembly
+    # (WORKLOG P3.130), so the other tasks' data stays in (WORKLOG P3.165). Norm stats are r50's: copy
+    # assets/pi05_robosyn_v3nf_r50/robosyn_v3nf_r50/ to assets/<this config>/robosyn_v3nf_r50/.
+    *[
+        TrainConfig(
+            name=f"pi05_robosyn_{version}_r50up",
+            model=pi0_config.Pi0Config(pi05=True, action_horizon=50),
+            data=LeRobotRoboSynMixtureDataConfig(
+                repo_id=f"robosyn_{version}_r50",
+                mixture=robosyn_mixture.robosyn_mixture(
+                    real_share=0.5,
+                    real_strides=real_strides,
+                    sim_strides=robosyn_mixture.SIM_STRIDES,
+                    trim_sim=True,
+                    gripper_rest_frames=gripper_rest_frames,
+                    gripper_state_noise=gripper_state_noise,
+                    real_holdout=real_holdout,
+                    task_weights=(("item_assembly", 3.5), ("sample_loading", 3.5)),
+                ),
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+            num_train_steps=30_000,
+            batch_size=32,
+            save_interval=2500,
+            keep_period=5000,
+            num_workers=16,
+            wandb_enabled=False,
+            fsdp_devices=2,
+        )
+        for version, gripper_rest_frames, gripper_state_noise, real_holdout, real_strides in _ROBOSYN_VERSIONS
+        if version == "v3nf"
+    ],
     # Single-task continuation of a multi-task r50 run (WORKLOG P3.19): the same data settings on one task.
     # The _sim variants leave out Real (WORKLOG P3.42), to see whether mixing in Real costs Sim success.
     # Pass the start checkpoint with --weight-loader.params-path, and copy the base run's norm stats to

@@ -81,6 +81,9 @@ class MixtureMember:
     # placement more often (sample_loading: aligning the tube with the hole and pushing it in, WORKLOG P3.129).
     focus_weight: float = 1.0
     focus_frames: int = 100
+    # Multiplies the member's n ** alpha term inside its group: >1 draws it more often, at the expense of the group's
+    # other members (multi-task runs that favor some tasks, WORKLOG P3.165).
+    share_weight: float = 1.0
 
 
 @dataclasses.dataclass(frozen=True)
@@ -171,13 +174,15 @@ def robosyn_mixture(
     extra_sim: tuple[tuple[str, str], ...] = (),
     official_sim: bool = True,
     focus_weight: float = 1.0,
+    task_weights: tuple[tuple[str, float], ...] = (),
 ) -> Mixture:
     """`extra_sim`: (task, repo_id) pairs of more Sim datasets of a task, read like the task's official one.
     `official_sim=False` leaves the official Sim datasets out, so the Sim half is only `extra_sim`.
-    `focus_weight` is every member's `MixtureMember.focus_weight`."""
-    real, sim = dict(real_strides), dict(sim_strides)
+    `focus_weight` is every member's `MixtureMember.focus_weight`.
+    `task_weights`: (task, weight) pairs, the `MixtureMember.share_weight` of all of a task's members."""
+    real, sim, weights = dict(real_strides), dict(sim_strides), dict(task_weights)
     members = tuple(
-        m
+        m if task not in weights else dataclasses.replace(m, share_weight=weights[task])
         for task in tasks
         for m in (
             *(
@@ -389,6 +394,7 @@ def member_weights(mixture: Mixture, sizes: list[int]) -> np.ndarray:
     group_weights = dict(mixture.group_weights)
     total = sum(group_weights.values())
     balanced = np.asarray(sizes, dtype=np.float64) ** mixture.balance_alpha
+    balanced *= [m.share_weight for m in mixture.members]
     weights = []
     for member, size_term in zip(mixture.members, balanced, strict=True):
         group_total = sum(b for m, b in zip(mixture.members, balanced, strict=True) if m.group == member.group)
