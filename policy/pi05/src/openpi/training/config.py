@@ -996,6 +996,49 @@ _CONFIGS = [
         for version, gripper_rest_frames, gripper_state_noise, real_holdout, real_strides in _ROBOSYN_VERSIONS
         if version == "v3nf"
     ],
+    # r50up plus the locally generated Sim episodes of those two tasks (WORKLOG P3.174): item_assembly's fifth
+    # generation (both arms pushed off their way and back before docking, the best single-task item_assembly data,
+    # WORKLOG P3.121) and sample_loading's first two (the data of the chosen `_gen12` model). With the extra Sim
+    # members, weights 3.0 / 2.5 keep the two tasks at about 26% / 28% of the samples. `_r50g` adds the same data to
+    # r50 without the upweighting. Norm stats are r50's, copied as for r50up.
+    *[
+        TrainConfig(
+            name=f"pi05_robosyn_{version}_{name}",
+            model=pi0_config.Pi0Config(pi05=True, action_horizon=50),
+            data=LeRobotRoboSynMixtureDataConfig(
+                repo_id=f"robosyn_{version}_r50",
+                mixture=robosyn_mixture.robosyn_mixture(
+                    real_share=0.5,
+                    real_strides=real_strides,
+                    sim_strides=robosyn_mixture.SIM_STRIDES,
+                    trim_sim=True,
+                    gripper_rest_frames=gripper_rest_frames,
+                    gripper_state_noise=gripper_state_noise,
+                    real_holdout=real_holdout,
+                    extra_sim=(
+                        ("item_assembly", robosyn_mixture.gen_repo_id("item_assembly", "5")),
+                        ("sample_loading", robosyn_mixture.gen_repo_id("sample_loading")),
+                        ("sample_loading", robosyn_mixture.gen_repo_id("sample_loading", "2")),
+                    ),
+                    task_weights=task_weights,
+                ),
+            ),
+            weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+            num_train_steps=30_000,
+            batch_size=32,
+            save_interval=2500,
+            keep_period=5000,
+            num_workers=16,
+            wandb_enabled=False,
+            fsdp_devices=2,
+        )
+        for version, gripper_rest_frames, gripper_state_noise, real_holdout, real_strides in _ROBOSYN_VERSIONS
+        if version == "v3nf"
+        for name, task_weights in (
+            ("r50upg", (("item_assembly", 3.0), ("sample_loading", 2.5))),
+            ("r50g", ()),
+        )
+    ],
     # Single-task continuation of a multi-task r50 run (WORKLOG P3.19): the same data settings on one task.
     # The _sim variants leave out Real (WORKLOG P3.42), to see whether mixing in Real costs Sim success.
     # Pass the start checkpoint with --weight-loader.params-path, and copy the base run's norm stats to
