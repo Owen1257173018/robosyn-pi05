@@ -4,7 +4,7 @@ This directory is our final submission. **Each of the 10 tasks runs with the π0
 
 ## 1. Checkpoints
 
-All 9 checkpoints are in one Hugging Face model repository: `TODO(submit): <hf_user>/<repo>`, revision `TODO(submit)`. It is gated, with access granted to the `RoboSynChallenge` user.
+All 9 checkpoints are in one Hugging Face model repository: `owen1257173018/robosyn-pi05`, revision `542fcfe657b0dc418aaae8dffd1b40f05f70b5bd`. It is gated, with access granted to the `RoboSynChallenge` user.
 
 - The repository uses the layout `eval.sh` expects by default, `<train_config_name>/<model_name>/<checkpoint_id>/`. Downloading it into `policy/pi05/checkpoints/` (§2) puts every checkpoint where the commands of §3 look for it.
 - Each checkpoint folder holds `params/` (bfloat16 weights, about 4.9 GiB), `assets/<asset_id>/norm_stats.json` (the normalization statistics of its training data) and `_CHECKPOINT_METADATA`.
@@ -37,7 +37,7 @@ cp -r ./src/openpi/models_pytorch/transformers_replace/* .venv/lib/python3.11/si
 
 # Weights of all 10 tasks (9 checkpoints, about 44 GiB), into checkpoints/<train_config_name>/<model_name>/<checkpoint_id>/.
 # For one task only, add --include "<train_config_name>/*" with the task's config from §1.
-.venv/bin/huggingface-cli download TODO(submit) --revision TODO(submit) --local-dir checkpoints
+.venv/bin/huggingface-cli download owen1257173018/robosyn-pi05 --revision 542fcfe657b0dc418aaae8dffd1b40f05f70b5bd --local-dir checkpoints
 ```
 
 - **Hardware**: Linux x86-64 with an NVIDIA GPU.
