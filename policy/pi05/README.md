@@ -4,7 +4,7 @@ This directory is our final submission. **Each of the 10 tasks runs with the π0
 
 ## 1. Checkpoints
 
-All 9 checkpoints are in one Hugging Face model repository: `owen1257173018/robosyn-pi05`, revision `542fcfe657b0dc418aaae8dffd1b40f05f70b5bd`. It is gated, with access granted to the `RoboSynChallenge` user.
+The 10 tasks use 9 checkpoints, because table_rearrangement and item_assembly share one. All 9 are in one Hugging Face model repository: `owen1257173018/robosyn-pi05`, revision `542fcfe657b0dc418aaae8dffd1b40f05f70b5bd`. It is gated, with access granted to the `RoboSynChallenge` user.
 
 - The repository uses the layout `eval.sh` expects by default, `<train_config_name>/<model_name>/<checkpoint_id>/`. Downloading it into `policy/pi05/checkpoints/` (§2) puts every checkpoint where the commands of §3 look for it.
 - Each checkpoint folder holds `params/` (bfloat16 weights, about 4.9 GiB), `assets/<asset_id>/norm_stats.json` (the normalization statistics of its training data) and `_CHECKPOINT_METADATA`.
@@ -30,7 +30,7 @@ Our setup follows the official π0.5 tutorial (`docs/tutorials/policy/pi05.md`),
 ```bash
 # EmbodiChain v0.2.4.post1 must sit next to this repository (uv.lock refers to ../../../EmbodiChain).
 git clone --branch v0.2.4.post1 https://github.com/DexForce/EmbodiChain.git
-git clone <this repository> RoboSynChallenge
+git clone https://github.com/Owen1257173018/robosyn-pi05.git RoboSynChallenge
 cd RoboSynChallenge/policy/pi05
 GIT_LFS_SKIP_SMUDGE=1 uv sync          # creates policy/pi05/.venv (Python 3.11)
 cp -r ./src/openpi/models_pytorch/transformers_replace/* .venv/lib/python3.11/site-packages/transformers/
