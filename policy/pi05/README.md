@@ -8,7 +8,7 @@ All 9 checkpoints are in one Hugging Face model repository: `TODO(submit): <hf_u
 
 - The repository uses the layout `eval.sh` expects by default, `<train_config_name>/<model_name>/<checkpoint_id>/`. Downloading it into `policy/pi05/checkpoints/` (§2) puts every checkpoint where the commands of §3 look for it.
 - Each checkpoint folder holds `params/` (bfloat16 weights, about 4.9 GiB), `assets/<asset_id>/norm_stats.json` (the normalization statistics of its training data) and `_CHECKPOINT_METADATA`.
-- Run every task with its checkpoint from the table. table_rearrangement and item_assembly share `pi05_robosyn_v3nf_r50`, which was trained on all 10 tasks for 30k steps and did better on these two tasks than our single-task models. sample_loading uses `pi05_robosyn_v3nf_r50up`, the same training with item_assembly and sample_loading drawn 3.5× as often. The others were trained on their own task for 20k steps (manipulate_pipette and mixer_operating: 30k).
+- Run every task with its checkpoint from the table. table_rearrangement and item_assembly share `pi05_robosyn_v3nf_r50`, which was trained on all 10 tasks for 30k steps and did better on these two tasks than our single-task models. sample_loading uses `pi05_robosyn_v3nf_r50up`, the same training with item_assembly and sample_loading drawn 3.5× as often, for 40k steps. The others were trained on their own task for 20k steps (manipulate_pipette and mixer_operating: 30k).
 
 | Task | `train_config_name` | `model_name` | `checkpoint_id` |
 |---|---|---|---|
@@ -21,7 +21,7 @@ All 9 checkpoints are in one Hugging Face model repository: `TODO(submit): <hf_u
 | mixer_operating | `pi05_robosyn_v3nf_mixer_operating_gen` | `v3nf_mixer_operating_gen_30k` | `29999` |
 | item_assembly | `pi05_robosyn_v3nf_r50` | `v3nf_r50` | `29999` |
 | manipulate_pipette | `pi05_robosyn_v3nf_manipulate_pipette_gen2` | `v3nf_manipulate_pipette_gen2_30k` | `29999` |
-| sample_loading | `pi05_robosyn_v3nf_r50up` | `v3nf_r50up` | `29999` |
+| sample_loading | `pi05_robosyn_v3nf_r50up` | `v3nf_r50up_40k` | `39999` |
 
 ## 2. Installation
 
@@ -76,7 +76,7 @@ In the simulator, drawer_open_place also passes `--close_drawer_after_place True
 | mixer_operating | `bash eval.sh mixer_operating random pi05_robosyn_v3nf_mixer_operating_gen v3nf_mixer_operating_gen_30k 0 --checkpoint_id 29999` |
 | item_assembly | `bash eval.sh item_assembly random pi05_robosyn_v3nf_r50 v3nf_r50 0 --checkpoint_id 29999` |
 | manipulate_pipette | `bash eval.sh manipulate_pipette random pi05_robosyn_v3nf_manipulate_pipette_gen2 v3nf_manipulate_pipette_gen2_30k 0 --checkpoint_id 29999` |
-| sample_loading | `bash eval.sh sample_loading random pi05_robosyn_v3nf_r50up v3nf_r50up 0 --checkpoint_id 29999` |
+| sample_loading | `bash eval.sh sample_loading random pi05_robosyn_v3nf_r50up v3nf_r50up_40k 0 --checkpoint_id 39999` |
 
 On the real robot, use the same entry points of `deploy_policy.py` (`get_model`, `eval`, `reset_model`) with `deploy_policy.yml` and each task's arguments from its command above. The one exception is drawer_open_place, which keeps the default `--close_drawer_after_place False`: the real-robot criterion ends with the tomato in the open drawer (FAQ2-06). The real robot takes the same actions as the simulator (FAQ2-11). `task_name` must be set (see §4).
 
@@ -120,7 +120,7 @@ XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run scripts/train.py <train_config_name> -
 ```
 
 The configs are in `src/openpi/training/config.py`, the data mixture in `src/openpi/training/robosyn_mixture.py`:
-- The single-task configs train for 20k steps. The manipulate_pipette and mixer_operating checkpoints were trained for 30k steps instead, with `--num-train-steps 30000 --lr-schedule.decay-steps 30000`. `pi05_robosyn_v3nf_r50` (table_rearrangement, item_assembly) trains for 30k steps on all 10 tasks. `pi05_robosyn_v3nf_r50up` (sample_loading) is the same, except that item_assembly's and sample_loading's datasets are drawn 3.5× as often (about 25% of the samples each instead of 11%). It uses r50's norm stats: copy `assets/pi05_robosyn_v3nf_r50/robosyn_v3nf_r50/` to `assets/pi05_robosyn_v3nf_r50up/robosyn_v3nf_r50/` instead of computing them.
+- The single-task configs train for 20k steps. The manipulate_pipette and mixer_operating checkpoints were trained for 30k steps instead, with `--num-train-steps 30000 --lr-schedule.decay-steps 30000`. `pi05_robosyn_v3nf_r50` (table_rearrangement, item_assembly) trains for 30k steps on all 10 tasks. `pi05_robosyn_v3nf_r50up` (sample_loading) is the same, except that item_assembly's and sample_loading's datasets are drawn 3.5× as often (about 25% of the samples each instead of 11%); its checkpoint was trained for 40k steps, with `--num-train-steps 40000 --lr-schedule.decay-steps 40000`. It uses r50's norm stats: copy `assets/pi05_robosyn_v3nf_r50/robosyn_v3nf_r50/` to `assets/pi05_robosyn_v3nf_r50up/robosyn_v3nf_r50/` instead of computing them.
 - Half of the training samples come from Sim data and half from Real data.
 - The Sim half is split between the config's Sim datasets: each one's share grows with its number of usable frames n as n^0.43. `_gen` and `_gen2` add the first or the second generation of our episodes to the official Sim episodes; `_gen2only` uses the second generation in their place.
 - Real states and actions are mapped to the 14-dim Sim layout.
