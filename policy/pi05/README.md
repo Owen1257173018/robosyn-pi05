@@ -2,6 +2,8 @@
 
 This directory is our final submission. **Each of the 10 tasks runs with the π0.5 checkpoint we chose for it** (task-specific checkpoints, FAQ1). Each checkpoint is `pi05_base` fine-tuned on Sim and Real data: seven on their own task alone, and two on all 10 tasks: the one that table_rearrangement and item_assembly share, and sample_loading's (§1). The Sim data is the task's official Sim dataset (1000 episodes); configs ending in `_gen*` add extra Sim episodes of the task that we generated with the official simulator, and `_gen2only` uses the generated episodes in place of the official ones. Every task's Real dataset (60 episodes) is always used. Every change we made is under `policy/pi05/`, on top of RoboSynChallenge `main` (FAQ2-37).
 
+**Technical report**: [`technical_report.pdf`](technical_report.pdf) in this folder (RoboSynChallenge 2026 template).
+
 ## 1. Checkpoints
 
 The 10 tasks use 9 checkpoints, because table_rearrangement and item_assembly share one. All 9 are in one Hugging Face model repository: `owen1257173018/robosyn-pi05`, revision `542fcfe657b0dc418aaae8dffd1b40f05f70b5bd`. It is gated, with access granted to the `RoboSynChallenge` user.
