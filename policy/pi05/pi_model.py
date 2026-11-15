@@ -46,29 +46,68 @@ TASK_INSTRUCTIONS = {
     "sample_loading": "Pick up the test tube, and it to the other arm, and insert it to the rack.",
 }
 
+# openpi training config of each task's checkpoint (src/openpi/training/config.py, README §1). It defines the model,
+# its input/output transforms and the folder of the norm stats under the checkpoint's assets/.
+# table_rearrangement and item_assembly use the same checkpoint, trained on all 10 tasks.
+TRAIN_CONFIGS = {
+    "click_bell": "pi05_robosyn_v3nf_click_bell_gen",
+    "handle_basket": "pi05_robosyn_v3nf_handle_basket_gen",
+    "water_pouring": "pi05_robosyn_v3nf_water_pouring_gen2only",
+    "table_rearrangement": "pi05_robosyn_v3nf_r50",
+    "items_handover": "pi05_robosyn_v3nf_items_handover_gen",
+    "drawer_open_place": "pi05_robosyn_v3nf_drawer_open_place_gen",
+    "mixer_operating": "pi05_robosyn_v3nf_mixer_operating_gen",
+    "item_assembly": "pi05_robosyn_v3nf_r50",
+    "manipulate_pipette": "pi05_robosyn_v3nf_manipulate_pipette_gen2",
+    "sample_loading": "pi05_robosyn_v3nf_r50up",
+}
+
+
+def resolve_checkpoint_dir(checkpoint_path, task_name):
+    """Absolute path of the task's checkpoint folder (the Hugging Face folder <task_name>/: params/, assets/).
+
+    Without a path it is policy/pi05/checkpoints/<task_name>. A relative path that does not exist from the current
+    directory is also looked up from policy/pi05, so `checkpoints/<task_name>` works from the repository root too.
+    """
+    if not checkpoint_path:
+        if not task_name:
+            raise ValueError("set task_name or checkpoint_path")
+        checkpoint_path = os.path.join(PI05_ROOT, "checkpoints", task_name)
+    path = os.path.expanduser(str(checkpoint_path))
+    if not os.path.isabs(path) and not os.path.exists(path) and os.path.exists(os.path.join(PI05_ROOT, path)):
+        path = os.path.join(PI05_ROOT, path)
+    path = os.path.abspath(path)
+    if not os.path.isdir(os.path.join(path, "params")):
+        raise FileNotFoundError(
+            f"no checkpoint at {path} (it needs params/ and assets/): download the Hugging Face folder "
+            f"{task_name or '<task_name>'}/ of owen1257173018/robosyn-pi05 (policy/pi05/README.md §2)"
+        )
+    return path
+
 
 class PI0:
 
     def __init__(
         self,
-        train_config_name,
-        model_name,
-        checkpoint_id,
-        pi0_step,
-        pytorch_device="cuda",
-        task_name=None,
+        task_name,
         checkpoint_dir=None,
+        train_config_name=None,
+        pi0_step=50,
+        pytorch_device="cuda",
         open_grippers_at_start=False,
         close_drawer_after_place=False,
         action_samples=1,
         noise_scale=1.0,
     ):
-        self.train_config_name = train_config_name
-        self.model_name = model_name
-        self.checkpoint_id = checkpoint_id
-        self.pytorch_device = pytorch_device
         self.task_name = task_name
-        self.checkpoint_dir = checkpoint_dir or self._default_checkpoint_dir()
+        self.train_config_name = train_config_name or TRAIN_CONFIGS.get(task_name)
+        if self.train_config_name is None:
+            raise ValueError(
+                f"unknown task_name {task_name!r}: use one of {', '.join(sorted(TRAIN_CONFIGS))}, or set train_config_name"
+            )
+        self.pytorch_device = pytorch_device
+        self.checkpoint_dir = resolve_checkpoint_dir(checkpoint_dir, task_name)
+        print(f"task {task_name}: openpi config {self.train_config_name}, checkpoint {self.checkpoint_dir}")
         self.open_at_start = np.array(OPEN_AT_START.get(task_name, (False, False)), dtype=bool) & open_grippers_at_start
         self.episode_start = True
         # Proprioception of every control step of the episode, for the drawer rule.
@@ -89,9 +128,6 @@ class PI0:
         self.observation_window = None
         self.instruction = None
         self.pi0_step = pi0_step
-
-    def _default_checkpoint_dir(self):
-        return os.path.join(PI05_ROOT, "checkpoints", self.train_config_name, self.model_name, str(self.checkpoint_id))
 
     def _config_for_device(self, pytorch_device):
         config = _config.get_config(self.train_config_name)

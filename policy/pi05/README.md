@@ -6,24 +6,24 @@ This directory is our final submission. **Each of the 10 tasks runs with the π0
 
 ## 1. Checkpoints
 
-The 10 tasks use 9 checkpoints, because table_rearrangement and item_assembly share one. All 9 are in one Hugging Face model repository: `owen1257173018/robosyn-pi05`, revision `542fcfe657b0dc418aaae8dffd1b40f05f70b5bd`. It is gated, with access granted to the `RoboSynChallenge` user.
+The checkpoints are in the Hugging Face model repository [`owen1257173018/robosyn-pi05`](https://huggingface.co/owen1257173018/robosyn-pi05), **one folder per task, named after the task** (`click_bell/`, `handle_basket/`, ...). The repository is gated, and the `RoboSynChallenge` user has access.
 
-- The repository uses the layout `eval.sh` expects by default, `<train_config_name>/<model_name>/<checkpoint_id>/`. Downloading it into `policy/pi05/checkpoints/` (§2) puts every checkpoint where the commands of §3 look for it.
-- Each checkpoint folder holds `params/` (bfloat16 weights, about 4.9 GiB), `assets/<asset_id>/norm_stats.json` (the normalization statistics of its training data) and `_CHECKPOINT_METADATA`.
-- Run every task with its checkpoint from the table. table_rearrangement and item_assembly share `pi05_robosyn_v3nf_r50`, which was trained on all 10 tasks for 30k steps and did better on these two tasks than our single-task models. sample_loading uses `pi05_robosyn_v3nf_r50up`, the same training with item_assembly and sample_loading drawn 3.5× as often, for 40k steps. The others were trained on their own task for 20k steps (manipulate_pipette and mixer_operating: 30k).
+- Each folder is a complete openpi checkpoint: `params/` (bfloat16 weights, about 4.9 GiB), `assets/<asset_id>/norm_stats.json` (the normalization statistics of its training data) and `_CHECKPOINT_METADATA`.
+- `eval.sh` takes the task and its folder (§3). The code picks the task's openpi training config from the task name (`TRAIN_CONFIGS` in `pi_model.py`); the table below is for reference.
+- `table_rearrangement/` and `item_assembly/` contain the same checkpoint, `pi05_robosyn_v3nf_r50`, trained on all 10 tasks for 30k steps; it did better on these two tasks than our single-task models. `sample_loading/` is `pi05_robosyn_v3nf_r50up`, the same training with item_assembly and sample_loading drawn 3.5× as often, for 40k steps. The others were trained on their own task for 20k steps (manipulate_pipette and mixer_operating: 30k).
 
-| Task | `train_config_name` | `model_name` | `checkpoint_id` |
-|---|---|---|---|
-| click_bell | `pi05_robosyn_v3nf_click_bell_gen` | `v3nf_click_bell_gen` | `19999` |
-| handle_basket | `pi05_robosyn_v3nf_handle_basket_gen` | `v3nf_handle_basket_gen` | `15000` |
-| water_pouring | `pi05_robosyn_v3nf_water_pouring_gen2only` | `v3nf_water_pouring_gen2only` | `19999` |
-| table_rearrangement | `pi05_robosyn_v3nf_r50` | `v3nf_r50` | `29999` |
-| items_handover | `pi05_robosyn_v3nf_items_handover_gen` | `v3nf_items_handover_gen` | `19999` |
-| drawer_open_place | `pi05_robosyn_v3nf_drawer_open_place_gen` | `v3nf_drawer_open_place_gen` | `19999` |
-| mixer_operating | `pi05_robosyn_v3nf_mixer_operating_gen` | `v3nf_mixer_operating_gen_30k` | `29999` |
-| item_assembly | `pi05_robosyn_v3nf_r50` | `v3nf_r50` | `29999` |
-| manipulate_pipette | `pi05_robosyn_v3nf_manipulate_pipette_gen2` | `v3nf_manipulate_pipette_gen2_30k` | `29999` |
-| sample_loading | `pi05_robosyn_v3nf_r50up` | `v3nf_r50up_40k` | `39999` |
+| Folder | Training config (`src/openpi/training/config.py`) | Step |
+|---|---|---|
+| `click_bell/` | `pi05_robosyn_v3nf_click_bell_gen` | 19999 |
+| `handle_basket/` | `pi05_robosyn_v3nf_handle_basket_gen` | 15000 |
+| `water_pouring/` | `pi05_robosyn_v3nf_water_pouring_gen2only` | 19999 |
+| `table_rearrangement/` | `pi05_robosyn_v3nf_r50` | 29999 |
+| `items_handover/` | `pi05_robosyn_v3nf_items_handover_gen` | 19999 |
+| `drawer_open_place/` | `pi05_robosyn_v3nf_drawer_open_place_gen` | 19999 |
+| `mixer_operating/` | `pi05_robosyn_v3nf_mixer_operating_gen` | 29999 |
+| `item_assembly/` | `pi05_robosyn_v3nf_r50` | 29999 |
+| `manipulate_pipette/` | `pi05_robosyn_v3nf_manipulate_pipette_gen2` | 29999 |
+| `sample_loading/` | `pi05_robosyn_v3nf_r50up` | 39999 |
 
 ## 2. Installation
 
@@ -37,11 +37,13 @@ cd RoboSynChallenge/policy/pi05
 GIT_LFS_SKIP_SMUDGE=1 uv sync          # creates policy/pi05/.venv (Python 3.11)
 cp -r ./src/openpi/models_pytorch/transformers_replace/* .venv/lib/python3.11/site-packages/transformers/
 
-# Weights of all 10 tasks (9 checkpoints, about 44 GiB), into checkpoints/<train_config_name>/<model_name>/<checkpoint_id>/.
-# For one task only, add --include "<train_config_name>/*" with the task's config from §1.
-.venv/bin/huggingface-cli download owen1257173018/robosyn-pi05 --revision 542fcfe657b0dc418aaae8dffd1b40f05f70b5bd --local-dir checkpoints
+# Checkpoints into checkpoints/<task_name>/. The repository is gated: log in with an account that has access.
+.venv/bin/huggingface-cli login
+.venv/bin/huggingface-cli download owen1257173018/robosyn-pi05 --local-dir checkpoints        # all 10 tasks, about 49 GiB
+# or one task:  .venv/bin/huggingface-cli download owen1257173018/robosyn-pi05 --include "click_bell/*" --local-dir checkpoints
 ```
 
+- **Checkpoint revision**: we tested revision `636e7b15d1122d475bfebf19b865b73a03947ce2` of the checkpoint repository (its `main`); add `--revision 636e7b15d1122d475bfebf19b865b73a03947ce2` to download exactly that one.
 - **Hardware**: Linux x86-64 with an NVIDIA GPU.
 - **Speed**: the first inference compiles for about 9 s, then each call takes about 110 ms on an RTX 4080 SUPER.
 - **GPU memory**:
@@ -51,7 +53,7 @@ cp -r ./src/openpi/models_pytorch/transformers_replace/* .venv/lib/python3.11/si
 - **Tested setups**:
   - Clean clone, install, and one simulator episode of each command in §3: RTX 4080 SUPER (32 GB), Ubuntu 22.04, driver 580.
   - Training and simulation evaluation: A100 80GB, Ubuntu 24.04, driver 570.
-- **Weights elsewhere**: pass `--checkpoint_dir <dir>`, the folder that holds the task's `params/`.
+- **Weights elsewhere**: pass their folder, the one that holds the task's `params/`, as the third argument of `eval.sh`.
 - **Troubleshooting**:
   - If XLA fails with `CUDA_ERROR_INVALID_IMAGE`, it picked up `ptxas` / `nvlink` from a CUDA toolkit newer than the driver, e.g. `/usr/local/cuda` → CUDA 13 under a 12.8 driver. Put the `bin/` of a toolkit that matches the driver first on `PATH`.
   - item_assembly sometimes ends with `Segmentation fault` (exit code 139) after `Metrics saved to: ...`, while the simulator shuts down. The results are already saved by then.
@@ -59,38 +61,38 @@ cp -r ./src/openpi/models_pytorch/transformers_replace/* .venv/lib/python3.11/si
 
 ## 3. Commands for each task
 
-Run from `policy/pi05`; the last positional argument is the GPU id. Each task passes its own training config, model name and checkpoint step (§1):
+Run from `policy/pi05`. The arguments are the task, the setting, the task's checkpoint folder (§1) and the GPU id:
 
 ```bash
-bash eval.sh <task> random <train_config_name> <model_name> <gpu_id> --checkpoint_id <checkpoint_id>
+bash eval.sh <task_name> random checkpoints/<task_name> <gpu_id>
 ```
 
 In the simulator, drawer_open_place also passes `--close_drawer_after_place True`, which the simulator's success check needs (§5, rule 3):
 
 | Task | Command |
 |---|---|
-| click_bell | `bash eval.sh click_bell random pi05_robosyn_v3nf_click_bell_gen v3nf_click_bell_gen 0 --checkpoint_id 19999` |
-| handle_basket | `bash eval.sh handle_basket random pi05_robosyn_v3nf_handle_basket_gen v3nf_handle_basket_gen 0 --checkpoint_id 15000` |
-| water_pouring | `bash eval.sh water_pouring random pi05_robosyn_v3nf_water_pouring_gen2only v3nf_water_pouring_gen2only 0 --checkpoint_id 19999` |
-| table_rearrangement | `bash eval.sh table_rearrangement random pi05_robosyn_v3nf_r50 v3nf_r50 0 --checkpoint_id 29999` |
-| items_handover | `bash eval.sh items_handover random pi05_robosyn_v3nf_items_handover_gen v3nf_items_handover_gen 0 --checkpoint_id 19999` |
-| drawer_open_place | `bash eval.sh drawer_open_place random pi05_robosyn_v3nf_drawer_open_place_gen v3nf_drawer_open_place_gen 0 --checkpoint_id 19999 --close_drawer_after_place True` |
-| mixer_operating | `bash eval.sh mixer_operating random pi05_robosyn_v3nf_mixer_operating_gen v3nf_mixer_operating_gen_30k 0 --checkpoint_id 29999` |
-| item_assembly | `bash eval.sh item_assembly random pi05_robosyn_v3nf_r50 v3nf_r50 0 --checkpoint_id 29999` |
-| manipulate_pipette | `bash eval.sh manipulate_pipette random pi05_robosyn_v3nf_manipulate_pipette_gen2 v3nf_manipulate_pipette_gen2_30k 0 --checkpoint_id 29999` |
-| sample_loading | `bash eval.sh sample_loading random pi05_robosyn_v3nf_r50up v3nf_r50up_40k 0 --checkpoint_id 39999` |
+| click_bell | `bash eval.sh click_bell random checkpoints/click_bell 0` |
+| handle_basket | `bash eval.sh handle_basket random checkpoints/handle_basket 0` |
+| water_pouring | `bash eval.sh water_pouring random checkpoints/water_pouring 0` |
+| table_rearrangement | `bash eval.sh table_rearrangement random checkpoints/table_rearrangement 0` |
+| items_handover | `bash eval.sh items_handover random checkpoints/items_handover 0` |
+| drawer_open_place | `bash eval.sh drawer_open_place random checkpoints/drawer_open_place 0 --close_drawer_after_place True` |
+| mixer_operating | `bash eval.sh mixer_operating random checkpoints/mixer_operating 0` |
+| item_assembly | `bash eval.sh item_assembly random checkpoints/item_assembly 0` |
+| manipulate_pipette | `bash eval.sh manipulate_pipette random checkpoints/manipulate_pipette 0` |
+| sample_loading | `bash eval.sh sample_loading random checkpoints/sample_loading 0` |
 
-On the real robot, use the same entry points of `deploy_policy.py` (`get_model`, `eval`, `reset_model`) with `deploy_policy.yml` and each task's arguments from its command above. The one exception is drawer_open_place, which keeps the default `--close_drawer_after_place False`: the real-robot criterion ends with the tomato in the open drawer (FAQ2-06). The real robot takes the same actions as the simulator (FAQ2-11). `task_name` must be set (see §4).
+Each command runs 20 episodes (`max_episodes` in `deploy_policy.yml`); options such as `--max_episodes 50` or `--headless True` can be appended.
+
+On the real robot, use the same entry points of `deploy_policy.py` (`get_model`, `eval`, `reset_model`) with `deploy_policy.yml`, `task_name` set to the task and `checkpoint_path` to its folder. The one exception is drawer_open_place, which keeps the default `close_drawer_after_place: false`: the real-robot criterion ends with the tomato in the open drawer (FAQ2-06). The real robot takes the same actions as the simulator (FAQ2-11).
 
 ## 4. Arguments (`deploy_policy.yml`, any of them can be overridden as `--<key> <value>`)
 
 | Key | Value | Meaning |
 |---|---|---|
-| `train_config_name` | the task's (§1) | openpi training config, which defines the model and its input/output transforms |
-| `model_name` | the task's (§1) | experiment name; part of the default checkpoint path |
-| `checkpoint_id` | the task's (§1) | training step of the checkpoint |
-| `checkpoint_dir` | `null` | if set, load the checkpoint from this directory instead of `checkpoints/<train_config_name>/<model_name>/<checkpoint_id>` |
-| `task_name` | one of the 10 tasks | selects the training prompt and the start-of-episode gripper rule below; without it the policy uses the environment's instruction and skips that rule |
+| `task_name` | one of the 10 tasks | selects the task's openpi training config (`TRAIN_CONFIGS` in `pi_model.py`; it defines the model, its input/output transforms and the norm-stats folder), the training prompt and the start-of-episode gripper rule below |
+| `checkpoint_path` | the task's folder (§1) | `eval.sh` takes it as its third argument; `null` means `policy/pi05/checkpoints/<task_name>`. `checkpoint_dir` is accepted as well |
+| `train_config_name` | `null` | only to use another openpi training config than the task's |
 | `pi0_step` | `10` | actions executed per inference; the model predicts 50 |
 | `action_samples` | `1` | action chunks sampled per inference, each with new flow-matching noise, and averaged |
 | `open_grippers_at_start` | `true` | start-of-episode gripper rule below |
@@ -112,13 +114,14 @@ On the real robot, use the same entry points of `deploy_policy.py` (`get_model`,
 
 ## 6. Training (for reference)
 
-One run per checkpoint, each from `pi05_base`, with the task's `train_config_name` and `model_name` from §1:
+One run per checkpoint, each from `pi05_base`, with the training config of §1:
 
 ```bash
 # Data under $HF_LEROBOT_HOME: the official RoboSynChallenge/cobotmagic_{Sim,Real}_<task>, and for the _gen* configs
 # also RoboSynGen/cobotmagic_Sim_<task>_gen, _gen2, ... (our generated Sim episodes of the task, LeRobot v2.1).
 uv run scripts/compute_norm_stats_mixture.py --config-name <train_config_name>
-XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run scripts/train.py <train_config_name> --exp-name=<model_name>   # batch 32, 2× A100 80GB
+XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run scripts/train.py <train_config_name> --exp-name=<name>   # batch 32, 2× A100 80GB
+# This writes checkpoints/<train_config_name>/<name>/<step>/, a checkpoint folder eval.sh takes as it is.
 ```
 
 The configs are in `src/openpi/training/config.py`, the data mixture in `src/openpi/training/robosyn_mixture.py`:

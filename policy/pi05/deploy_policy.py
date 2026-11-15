@@ -77,40 +77,37 @@ def encode_obs(obs):
     return img_arr, state
 
 
+def _flag(usr_args, key, default=False):
+    """A boolean argument; the strings "false", "0", "no" and "none" count as false (bool("false") is True)."""
+    value = usr_args.get(key, default)
+    if isinstance(value, str):
+        return value.strip().lower() not in ("", "false", "0", "no", "none", "null")
+    return bool(value)
+
+
 def get_model(usr_args):
-    """Create and return a π₀ policy model instance.
+    """Create the π0.5 policy of one task.
 
-    usr_args 中需要的字段:
-        train_config_name  — openpi training config name
-        model_name         — model name (e.g. "pi0_base")
-        checkpoint_id      — checkpoint step number
-        pi0_step           — number of action steps to execute per inference (default 50)
+    Fields of usr_args (deploy_policy.yml plus the overrides):
+        task_name          — one of the 10 tasks; selects the task's openpi config (TRAIN_CONFIGS in pi_model.py),
+                             its training prompt and the start-of-episode gripper rule
+        checkpoint_path    — the task's checkpoint folder, i.e. the Hugging Face folder <task_name>/ (params/, assets/);
+                             default policy/pi05/checkpoints/<task_name>. `checkpoint_dir` is accepted as well.
+        train_config_name  — optional: another openpi config than the task's
+        pi0_step           — actions executed per inference (the model predicts 50)
     """
-    train_config_name = usr_args.get("train_config_name")
-    model_name = usr_args.get("model_name")
-    checkpoint_id = int(usr_args.get("checkpoint_id", 30000))
-    pi0_step = int(usr_args.get("pi0_step", 50))
-    pytorch_device = usr_args.get("pytorch_device", "cuda")
-
-    if train_config_name is None or model_name is None:
-        raise ValueError(
-            "train_config_name and model_name must be provided in usr_args"
-        )
-
     model = PI0(
-        train_config_name=train_config_name,
-        model_name=model_name,
-        checkpoint_id=checkpoint_id,
-        pi0_step=pi0_step,
-        pytorch_device=pytorch_device,
         task_name=usr_args.get("task_name"),
-        checkpoint_dir=usr_args.get("checkpoint_dir"),
-        open_grippers_at_start=bool(usr_args.get("open_grippers_at_start", False)),
-        close_drawer_after_place=bool(usr_args.get("close_drawer_after_place", False)),
+        checkpoint_dir=usr_args.get("checkpoint_path") or usr_args.get("checkpoint_dir"),
+        train_config_name=usr_args.get("train_config_name"),
+        pi0_step=int(usr_args.get("pi0_step", 50)),
+        pytorch_device=usr_args.get("pytorch_device", "cuda"),
+        open_grippers_at_start=_flag(usr_args, "open_grippers_at_start"),
+        close_drawer_after_place=_flag(usr_args, "close_drawer_after_place"),
         action_samples=int(usr_args.get("action_samples", 1)),
         noise_scale=float(usr_args.get("noise_scale", 1.0)),
     )
-    model.rescale_gripper = bool(usr_args.get("rescale_gripper", False))
+    model.rescale_gripper = _flag(usr_args, "rescale_gripper")
     return model
 
 

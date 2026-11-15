@@ -1,5 +1,6 @@
-# π₀ Policy Evaluation Configuration
-# python scripts/eval_policy.py --config policy/pi0/deploy_policy.yml
+# π0.5 policy configuration (team Owen). Simulator, from policy/pi05:
+#   bash eval.sh <task_name> <setting> <checkpoint_path> [gpu_id]     e.g. bash eval.sh click_bell random checkpoints/click_bell 0
+# Real robot: this file with task_name and checkpoint_path (the task's Hugging Face folder) set.
 
 # ------------------------------------------------------------------
 # Basic experiment configuration (Each policy must be retained.)
@@ -24,9 +25,8 @@ eval_expert_check: true
 # ------------------------------------------------------------------
 # Add policy-related parameters you needing, used for get_model()
 # ------------------------------------------------------------------
-train_config_name: null
-checkpoint_id: 30000
-checkpoint_dir: null # Optional; defaults to policy/pi05/checkpoints/<train_config_name>/<model_name>/<checkpoint_id>
+checkpoint_path: null # The task's checkpoint folder, i.e. the Hugging Face folder <task_name>/ (params/, assets/). Default: policy/pi05/checkpoints/<task_name>.
+train_config_name: null # Optional; by default the task's openpi config (TRAIN_CONFIGS in pi_model.py).
 pi0_step: 10 # It only represents the number of execution steps. not the horizon of reasoning, it's the horizon of execution.
 action_samples: 1 # Action chunks sampled per inference (each with new flow-matching noise) and averaged.
 noise_scale: 1.0 # Scale of the flow-matching noise each chunk is sampled from: 1 is the trained distribution, smaller values sample closer to the most likely chunk, 0 is deterministic.
