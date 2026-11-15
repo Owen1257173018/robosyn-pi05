@@ -51,10 +51,11 @@ cp -r ./src/openpi/models_pytorch/transformers_replace/* .venv/lib/python3.11/si
   - `eval.sh` gives JAX 40% of the card unless `XLA_PYTHON_CLIENT_MEM_FRACTION` is already set.
   - On cards below 20 GB, set it higher, e.g. `XLA_PYTHON_CLIENT_MEM_FRACTION=0.6`.
 - **Tested setups**:
-  - Clean clone, install, and one simulator episode of each command in §3: RTX 4080 SUPER (32 GB), Ubuntu 22.04, driver 580.
+  - Clean clone from GitHub, install, download of all 10 folders from Hugging Face (identical to our copies, byte for byte) and every command of §3 with its 20 episodes, on 2026-11-15 (results in §3): RTX 4080 SUPER (32 GB), Ubuntu 22.04, driver 580.
   - Training and simulation evaluation: A100 80GB, Ubuntu 24.04, driver 570.
 - **Weights elsewhere**: pass their folder, the one that holds the task's `params/`, as the third argument of `eval.sh`.
 - **Troubleshooting**:
+  - If the download stops with a network error (e.g. `ReadTimeout`), run the same command again: it keeps the files already downloaded and fetches the rest.
   - If XLA fails with `CUDA_ERROR_INVALID_IMAGE`, it picked up `ptxas` / `nvlink` from a CUDA toolkit newer than the driver, e.g. `/usr/local/cuda` → CUDA 13 under a 12.8 driver. Put the `bin/` of a toolkit that matches the driver first on `PATH`.
   - item_assembly sometimes ends with `Segmentation fault` (exit code 139) after `Metrics saved to: ...`, while the simulator shuts down. The results are already saved by then.
   - Keep the absolute path of the `RoboSynChallenge` folder under about 100 characters. The simulator loads the distractor models by absolute path, up to 74 characters past that folder. From a clone under a 126-character path, dexsim failed an assertion (`DFString.h:94` in `OptiXMaterialMgr::CreateMaterial`) on a 197-character model path and hung. The same clone ran fine from a 36-character path.
@@ -67,22 +68,24 @@ Run from `policy/pi05`. The arguments are the task, the setting, the task's chec
 bash eval.sh <task_name> random checkpoints/<task_name> <gpu_id>
 ```
 
-In the simulator, drawer_open_place also passes `--close_drawer_after_place True`, which the simulator's success check needs (§5, rule 3):
+In the simulator, drawer_open_place also passes `--close_drawer_after_place True`, which the simulator's success check needs (§5, rule 3). The last column is what each command gave in our clean test (§2):
 
-| Task | Command |
-|---|---|
-| click_bell | `bash eval.sh click_bell random checkpoints/click_bell 0` |
-| handle_basket | `bash eval.sh handle_basket random checkpoints/handle_basket 0` |
-| water_pouring | `bash eval.sh water_pouring random checkpoints/water_pouring 0` |
-| table_rearrangement | `bash eval.sh table_rearrangement random checkpoints/table_rearrangement 0` |
-| items_handover | `bash eval.sh items_handover random checkpoints/items_handover 0` |
-| drawer_open_place | `bash eval.sh drawer_open_place random checkpoints/drawer_open_place 0 --close_drawer_after_place True` |
-| mixer_operating | `bash eval.sh mixer_operating random checkpoints/mixer_operating 0` |
-| item_assembly | `bash eval.sh item_assembly random checkpoints/item_assembly 0` |
-| manipulate_pipette | `bash eval.sh manipulate_pipette random checkpoints/manipulate_pipette 0` |
-| sample_loading | `bash eval.sh sample_loading random checkpoints/sample_loading 0` |
+| Task | Command | Successes |
+|---|---|---|
+| click_bell | `bash eval.sh click_bell random checkpoints/click_bell 0` | 19/20 |
+| handle_basket | `bash eval.sh handle_basket random checkpoints/handle_basket 0` | 19/20 |
+| water_pouring | `bash eval.sh water_pouring random checkpoints/water_pouring 0` | 19/20 |
+| table_rearrangement | `bash eval.sh table_rearrangement random checkpoints/table_rearrangement 0` | 20/20 |
+| items_handover | `bash eval.sh items_handover random checkpoints/items_handover 0` | 13/20 |
+| drawer_open_place | `bash eval.sh drawer_open_place random checkpoints/drawer_open_place 0 --close_drawer_after_place True` | 20/20 |
+| mixer_operating | `bash eval.sh mixer_operating random checkpoints/mixer_operating 0` | 18/20 |
+| item_assembly | `bash eval.sh item_assembly random checkpoints/item_assembly 0` | 12/20 |
+| manipulate_pipette | `bash eval.sh manipulate_pipette random checkpoints/manipulate_pipette 0` | 14/20 |
+| sample_loading | `bash eval.sh sample_loading random checkpoints/sample_loading 0` | 0/20 |
 
 Each command runs 20 episodes (`max_episodes` in `deploy_policy.yml`); options such as `--max_episodes 50` or `--headless True` can be appended.
+
+These runs use the simulator's own success checks and step limits (`max_episode_steps` in `configs/<task>/random/gym_config.json`, 350 to 1000 steps). The technical report instead evaluates every task under the real-robot protocol: 1000 steps and the real-robot criteria (FAQ2-06). sample_loading gets 0/20 here because the simulator stops it at 500 steps and counts only a tube standing upright and fully inserted. Under the real-robot protocol the same checkpoint left the tube in the rack in 248 of 480 episodes, after 539 steps on average (report, Table 2).
 
 On the real robot, use the same entry points of `deploy_policy.py` (`get_model`, `eval`, `reset_model`) with `deploy_policy.yml`, `task_name` set to the task and `checkpoint_path` to its folder. The one exception is drawer_open_place, which keeps the default `close_drawer_after_place: false`: the real-robot criterion ends with the tomato in the open drawer (FAQ2-06). The real robot takes the same actions as the simulator (FAQ2-11).
 
