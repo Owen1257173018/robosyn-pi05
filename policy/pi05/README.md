@@ -45,7 +45,7 @@ cp -r ./src/openpi/models_pytorch/transformers_replace/* .venv/lib/python3.11/si
 
 - **Checkpoint revision**: we tested revision `636e7b15d1122d475bfebf19b865b73a03947ce2` of the checkpoint repository (its `main`); add `--revision 636e7b15d1122d475bfebf19b865b73a03947ce2` to download exactly that one.
 - **Hardware**: Linux x86-64 with an NVIDIA GPU.
-- **Speed**: the first inference compiles for about 9 s, then each call takes about 110 ms on an RTX 4080 SUPER.
+- **Speed**: the model compiles when it is loaded (`warm_up`, about 9 s), then each inference takes about 110 ms on an RTX 4080 SUPER.
 - **GPU memory**:
   - Inference peaks at 6.7 GiB.
   - `eval.sh` gives JAX 40% of the card unless `XLA_PYTHON_CLIENT_MEM_FRACTION` is already set.
@@ -99,6 +99,8 @@ On the real robot, use the same entry points of `deploy_policy.py` (`get_model`,
 | `pi0_step` | `10` | actions executed per inference; the model predicts 50 |
 | `action_samples` | `1` | action chunks sampled per inference, each with new flow-matching noise, and averaged |
 | `open_grippers_at_start` | `true` | start-of-episode gripper rule below |
+| `episode_time_limit_s` | `540` | wall-clock budget of one episode, counted from `reset_model`: once it is used up, `eval()` stops sending actions and returns `truncated=True`, so the episode ends as a timeout before the evaluation's 600-second limit; `null` disables it. A simulator episode of 1000 steps takes about 70 s, so it only acts when the env is slow |
+| `warm_up` | `true` | one inference on a blank observation when the model is loaded, so that XLA compiles (about 9 s) before the first episode; the policy's random key is restored afterwards, so the episodes are unchanged |
 | `close_drawer_after_place` | `false` | drawer_open_place only: close the drawer after the object is placed (rule 3 below). Use `true` in the simulator |
 | `rescale_gripper` | `true` | the policy outputs the gripper as a normalized opening (0 closed, 1 open), the unit of the Real data; `true` maps it into the gripper range the env declares (`single_action_space` low/high), as the official SmolVLA adapter does: the simulator takes the finger position in meters (0–0.05). A gripper without a finite declared range is sent unchanged; `false` always sends the normalized opening |
 
@@ -109,10 +111,21 @@ On the real robot, use the same entry points of `deploy_policy.py` (`get_model`,
   - `robot/qpos`, 14 values: per arm, 6 joints and the gripper opening in [0, 1];
   - the task's training prompt (`TASK_INSTRUCTIONS` in `pi_model.py`, identical to `meta/tasks.jsonl` of the official datasets).
 - **Outputs**: 14-dim absolute joint positions and gripper commands (normalized opening: 0 closed, 1 open, as in the Real data), one per control step. The gripper commands are mapped into the env's gripper range (`rescale_gripper`, §4).
+- **Execution** (`eval()` in `deploy_policy.py`): each inference yields `pi0_step` (10) actions, executed in order with one `env.step()` and one `is_task_success()` call per action, as in the official adapters. The env's action space is read once per episode and the whole chunk is converted at once. The observation is read once per chunk, before inference; only the simulator-only drawer rule (rule 3) also reads every step's joint state. Non-finite actions or a missing camera / `qpos` key raise an error at once, naming what is wrong.
+- **Timing**: every episode ends with one line, e.g. `[pi05 timing] item_assembly episode 3 (success): 412 steps, 42 chunks, 52.31 s total; first action 0.41 s; model 4.90 s (117 ms/chunk); obs->model 0.02 s; action format 0.01 s; env.step 45.10 s (109 ms/step, max 230 ms); success check 0.60 s (1.5 ms/step); other in eval 0.10 s; outside eval 1.56 s` (`episode_timing.py`):
+  - total: from `reset_model` to the end of the last `eval()` call;
+  - first action: from `reset_model` to the first `env.step()` (also printed when it happens);
+  - model: synchronized inference;
+  - obs->model: reading the observation into the model input;
+  - env.step: the env's execution, feedback and returned observation;
+  - outside eval: time between `eval()` calls, in the evaluation harness.
+  An `env.step()` slower than 5 s is reported at once.
+- **Time budget** (`episode_time_limit_s`, §4): the real-robot evaluation stops an episode at 600 s. When an episode has run 540 s, the adapter prints `[pi05 timing] ... ending the episode as a timeout`, stops sending actions and returns `truncated=True`. A success at that step still counts, because the success check comes first.
 - **Rules on top of the model output** (`pi_model.py`, `drawer_closer.py`), based only on the observation and the policy's own previous outputs (FAQ2-17):
   1. A gripper output below 0.25 is sent as 0 (closed).
   2. At the start of an episode, a gripper that is closed but that the demonstrations open is commanded open for the first action chunk (`OPEN_AT_START`, `open_grippers_at_start`). This rule does nothing when the gripper starts open.
   3. drawer_open_place (`close_drawer_after_place`, simulator only): the simulator counts a success only when the object ends within 0.1 m of the drawer body in the XY plane, which needs the drawer closed again, and none of the 60 Real demonstrations closes it. The real-robot criterion ends with the object in the open drawer (FAQ2-06), so the rule is off by default. Once the left gripper has carried something (its arm moved at least 0.5 rad while holding) and let go, the right arm replays its own pull in reverse, from the joint, gripper and command history: back to the pose where it let go of the handle, grip, push to the pose where its fingers first closed on the handle (drawer still closed), let go, and stay. Only the right arm is overridden.
+- **Check** (`scripts/check_eval_adapter.py`, no simulator or GPU needed): `.venv/bin/python scripts/check_eval_adapter.py` runs `eval()` on a mock env and compares it with the adapter of the original finals submission (commit 26e9a26): same actions and return values, one `env.step()` and one success check per action, and the time budget. With `--task <task_name> --checkpoint checkpoints/<task_name>` it also checks that `warm_up` leaves the sampled actions unchanged.
 - **Training data**: Real is used at its recorded 10 Hz speed. Each Real moving segment stays under the 1000-step real-robot limit (FAQ2-13).
 
 ## 6. Training (for reference)

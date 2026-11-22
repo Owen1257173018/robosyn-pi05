@@ -2,6 +2,7 @@
 
 import dataclasses
 import os
+import time
 
 import numpy as np
 from drawer_closer import DrawerCloser
@@ -144,6 +145,26 @@ class PI0:
             self.checkpoint_dir,
             pytorch_device=pytorch_device,
         )
+
+    def warm_up(self):
+        """Compile the model before the first episode, so that its first action is not delayed by XLA compilation
+        (about 9 s on an RTX 4080 SUPER): one inference on a blank observation. The policy's random key is put back
+        afterwards, so the episodes draw exactly the same noise as without the warm-up."""
+        blank = np.zeros((480, 640, 3), dtype=np.uint8)
+        observation = {
+            "observation/image": blank,
+            "observation/left_wrist_image": blank,
+            "observation/right_wrist_image": blank,
+            "observation/state": np.zeros(14, dtype=np.float32),
+            "prompt": TASK_INSTRUCTIONS.get(self.task_name, ""),
+        }
+        kwargs = {} if self.noise_scale == 1.0 else {"noise": np.zeros(self.noise_shape, dtype=np.float32)}
+        rng = getattr(self.policy, "_rng", None)
+        started = time.perf_counter()
+        np.asarray(self.policy.infer(observation, **kwargs)["actions"])
+        if rng is not None:
+            self.policy._rng = rng
+        print(f"model warmed up in {time.perf_counter() - started:.1f} s")
 
     # set img_size
     def set_img_size(self, img_size):
