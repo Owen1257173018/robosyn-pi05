@@ -7,7 +7,9 @@
    reads and observation reads.
 3. `episode_time_limit_s`: with a slow env, eval() returns truncated=True once the budget is used up, and a success
    before that still ends the episode as a success.
-4. With --task and --checkpoint: the action chunk sampled after warm_up() equals the one sampled without it.
+4. A slow is_task_success() (60 ms per call): after 3 calls the adapter stops calling it after every step, executes
+   each chunk in full and the harness's own check ends the episode. One slow call alone changes nothing.
+5. With --task and --checkpoint: the action chunk sampled after warm_up() equals the one sampled without it.
 
 From policy/pi05:
     .venv/bin/python scripts/check_eval_adapter.py
@@ -95,12 +97,16 @@ class Unwrapped:
 class MockEnv:
     """The parts of the env eval() uses. The observation changes with every step."""
 
-    def __init__(self, success_at=None, limit=1000, plain_bool_truncation=False, step_seconds=0.0):
+    def __init__(self, success_at=None, limit=1000, plain_bool_truncation=False, step_seconds=0.0,
+                 check_seconds=0.0, stall_at_check=None):
         self._unwrapped = Unwrapped()
         self.success_at = success_at
         self.limit = limit
         self.plain = plain_bool_truncation
         self.step_seconds = step_seconds
+        self.check_seconds = check_seconds
+        self.stall_at_check = stall_at_check
+        self.checks = 0
         self.steps = 0
         self.sent = []
         self._current_instruction = "instruction from the env"
@@ -135,7 +141,14 @@ class MockEnv:
     def get_wrapper_attr(self, name):
         assert name == "is_task_success"
         count("success checks")
-        return lambda: self.success_at is not None and self.steps >= self.success_at
+        self.checks += 1
+        delay = self.check_seconds + (0.2 if self.checks == self.stall_at_check else 0.0)
+
+        def is_task_success():
+            time.sleep(delay)
+            return self.success_at is not None and self.steps >= self.success_at
+
+        return is_task_success
 
 
 class FakeModel:
@@ -231,6 +244,18 @@ returns = run(new_dp, env, model)
 success_ok = env.steps == 12 and not returns[-1][1]
 print(f"success at step 12 within the budget: {env.steps} steps, truncated={returns[-1][1]}: {'ok' if success_ok else 'WRONG'}")
 ok &= limit_ok and success_ok
+
+print("--- slow is_task_success(): 60 ms per call, success at step 37 ---")
+env, model = MockEnv(success_at=37, check_seconds=0.06), FakeModel(seed=1)
+returns = run(new_dp, env, model)
+slow_ok = env.steps == 40 and env.checks == 3 + len(returns) and not returns[-1][1]
+print(f"{env.steps} actions, {env.checks - len(returns)} success checks by the adapter, {len(returns)} by the harness: "
+      f"{'ok' if slow_ok else 'WRONG'}")
+env, model = MockEnv(success_at=37, stall_at_check=5), FakeModel(seed=1)
+returns = run(new_dp, env, model)
+stall_ok = env.steps == 37 and env.checks == 37 + len(returns)
+print(f"one 200 ms call only: {env.steps} actions, per-step checks kept: {'ok' if stall_ok else 'WRONG'}")
+ok &= slow_ok and stall_ok
 
 if args.checkpoint:
     print("--- warm_up() on the checkpoint ---")

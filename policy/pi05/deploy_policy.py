@@ -148,9 +148,10 @@ def eval(env, model, obs):
 
     1. On the first call of an episode: set the instruction and read the env's action space once.
     2. Read the observation into the model input and infer one chunk (`pi0_step` actions).
-    3. Execute the chunk in order: per action one env.step() and one success check. The observation is read
-       again only by the next call (from the obs the harness passes back), except with the simulator-only
-       drawer rule, which needs the joint state of every step.
+    3. Execute the chunk in order: per action one env.step() and one success check (dropped for the rest of the
+       episode if is_task_success() turns out slow; the harness checks success after every call anyway). The
+       observation is read again only by the next call (from the obs the harness passes back), except with the
+       simulator-only drawer rule, which needs the joint state of every step.
     """
     timer = model.timer
     timer.ensure_started()
@@ -184,8 +185,12 @@ def eval(env, model, obs):
         # The `gym_config` setting configures the `actionmanager` to support delta action input;
         # the default action must be absolute `qpos`.
         step_done = time.perf_counter()
-        success = env.get_wrapper_attr("is_task_success")()
-        timer.after_step(step_s=step_done - step_started, success_s=time.perf_counter() - step_done)
+        # Checked after every step while that is cheap (it is free in the simulator); see episode_timing.py.
+        success, success_s = False, None
+        if timer.check_each_step:
+            success = env.get_wrapper_attr("is_task_success")()
+            success_s = time.perf_counter() - step_done
+        timer.after_step(step_done - step_started, success_s)
 
         if success:
             end_reason = "success"
